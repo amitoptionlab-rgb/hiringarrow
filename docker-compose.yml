@@ -1,0 +1,36 @@
+# Local run:  cp .env.example .env  &&  docker compose up --build
+# App: http://localhost:3000   Mailpit inbox (catches all mail): http://localhost:8025
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: mail, POSTGRES_PASSWORD: mail, POSTGRES_DB: hiringarrow }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U mail -d hiringarrow"], interval: 3s, retries: 20 }
+  redis:
+    image: redis:7-alpine
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 20 }
+  mailpit:
+    image: axllent/mailpit
+    ports: ["8025:8025"]
+  migrate:
+    build: .
+    command: node scripts/migrate.js
+    env_file: .env
+    environment: &env
+      DATABASE_URL: postgres://mail:mail@postgres:5432/hiringarrow
+      REDIS_URL: redis://redis:6379
+      SMTP_URL: smtp://mailpit:1025
+    depends_on: { postgres: { condition: service_healthy } }
+  app:
+    build: .
+    env_file: .env
+    environment: *env
+    ports: ["3000:3000"]
+    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
+  worker:
+    build: .
+    command: node src/worker.js
+    env_file: .env
+    environment: *env
+    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
+volumes: { pgdata: {} }
