@@ -210,22 +210,22 @@ async function campaignEditor(id) {
   await shell('campaigns', `<form id="cform" data-form="campaign" autocomplete="off">
   <div class="sticky-actions"><div><input class="title-input" name="name" value="${esc(v.name)}" aria-label="Campaign name" required> ${c ? `<span class="badge ${esc(v.status)}">${esc(v.status.replace('_', ' '))}</span>` : ''} <span class="muted small" id="dirty"></span></div>
     <div class="actions">${aiButton()}<button type="button" class="ghost" data-act="ed-save">Save</button><button type="button" class="ghost" data-act="ed-test">Send test to me</button><button type="button" data-act="ed-send">Review &amp; send</button></div></div>
-  <div class="panel"><div class="step"><b>1</b><h2>Who and what</h2></div>
+  <div class="panel"><div class="step"><b>1</b><h2>Sender</h2></div>
     <div class="row"><label>From name<input name="from_name" value="${esc(v.from_name)}" required></label>
     <label>From email<input name="from_email" type="email" value="${esc(v.from_email)}" required placeholder="news@yourdomain.com" list="doms"></label></div>
-    <div class="row"><label>Reply-To (optional)<input name="reply_to" type="email" value="${esc(v.reply_to || '')}" placeholder="you@yourcompany.com"></label></div>
+    <div class="row"><label>Reply-To (optional)<input name="reply_to" type="email" value="${esc(v.reply_to || '')}" placeholder="you@yourcompany.com"><span class="muted small">Where replies go. Leave empty to use the From email.</span></label></div>
     <datalist id="doms">${domains.map((d) => `<option value="hello@${esc(d.domain)}">`).join('')}</datalist>
-    <label>Subject line<input name="subject" value="${esc(v.subject)}" required maxlength="150" placeholder="What is in it for the reader?"></label><div class="tip" id="tip"></div>
+    </div><div class="panel"><div class="step"><b>2</b><h2>Subject and preview</h2></div><label>Subject line<input name="subject" value="${esc(v.subject)}" required maxlength="150" placeholder="What is in it for the reader?"></label><div class="tip" id="tip"></div>
     <label style="display:flex;gap:10px;align-items:center;font-weight:400"><input type="checkbox" id="ab" style="width:auto;margin:0" ${abOn ? 'checked' : ''}> Test two subject lines against each other</label>
     <div id="abbox" ${abOn ? '' : 'hidden'} style="margin:10px 0 0"><label>Subject line B<input name="subject_b" value="${esc(v.subject_b || '')}" maxlength="150"></label>
       <label>Version B goes to <b id="splitv">${v.ab_split}</b>% of people<input type="range" name="ab_split" min="10" max="90" step="5" value="${v.ab_split}"></label></div>
     <label>Preview text <span class="muted">(grey text after the subject in the inbox)</span><input name="preheader" value="${esc(v.preheader || '')}" maxlength="200"></label>
     <div class="inbox" id="inbox" aria-label="Inbox preview"></div></div>
-  <div class="panel"><div class="step"><b>2</b><h2>Audience</h2></div>
+  <div class="panel"><div class="step"><b>3</b><h2>Audience</h2></div>
     <div class="row"><label>Send to<select name="list_id"><option value="">All subscribed contacts</option>${lists.map((l) => `<option value="${l.id}" ${v.list_id === l.id ? 'selected' : ''}>${esc(l.name)} (${num(l.subscribers)})</option>`).join('')}</select></label></div>
     <div id="seg"></div><div class="count" id="count" aria-live="polite"></div>
     <label style="display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px"><input type="checkbox" name="send_time_opt" style="width:auto;margin:4px 0 0" ${v.send_time_opt ? 'checked' : ''}><span><b>Smart send time.</b> Deliver to each person around the hour they usually open email (needs 3 earlier opens; everyone else gets it right away). Delivery can take up to 24 hours.</span></label></div>
-  <div class="panel"><div class="step"><b>3</b><h2>Design</h2></div>
+  <div class="panel"><div class="step"><b>4</b><h2>Design</h2></div>
     <div class="modes" role="tablist"><button type="button" role="tab" data-act="mode" data-m="design" class="on">Design</button><button type="button" role="tab" data-act="mode" data-m="preview">Preview</button><button type="button" role="tab" data-act="mode" data-m="code">HTML code</button><span class="sp"></span>
       <span class="device" id="device" hidden><button type="button" class="small ghost" data-act="device" data-d="desktop">Desktop</button><button type="button" class="small ghost" data-act="device" data-d="mobile">Phone</button></span></div>
     <div id="m-design"></div>
