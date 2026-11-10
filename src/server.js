@@ -9,10 +9,22 @@ import { pub } from './public.js';
 import { webhooks } from './webhooks.js';
 import { admin } from './admin.js';
 import { v1 } from './v1.js';
+import { social } from './social.js';
 import { mcp } from './mcp.js';
 
 const app = express();
 app.set('trust proxy', 1);
+// canonical host: www <-> apex. OAuth state cookies and links must stay on the BASE_URL host.
+const canonical = new URL(config.baseUrl);
+const bare = (h) => h.replace(/^www\./, '');
+app.use((req, res, next) => {
+  if (!config.prod || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
+  if (req.path === '/health' || req.path.startsWith('/webhooks')) return next();
+  if (req.hostname !== canonical.hostname && bare(req.hostname) === bare(canonical.hostname)) {
+    return res.redirect(301, canonical.origin + req.originalUrl);
+  }
+  next();
+});
 app.disable('x-powered-by');
 app.use(helmet({
   contentSecurityPolicy: {
@@ -35,6 +47,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false }));
 app.get('/health', async (req, res) => { await pool.query('SELECT 1'); res.json({ ok: true }); });
 app.use('/api', api);
+app.use('/auth', social);
 app.use('/admin', admin);
 app.use('/v1', v1);
 app.use('/mcp', mcp);

@@ -22,6 +22,10 @@ export const config = {
   verifyMx: e.VERIFY_MX === 'true',
   requireEmailVerify: e.REQUIRE_EMAIL_VERIFY === 'true',   // new signups must confirm their email before the first login
   brevo: { webhookSecret: e.BREVO_WEBHOOK_SECRET || '' },       // protects POST /webhooks/brevo
+  oauth: {                                         // social login; a provider is shown only when both values are set
+    google:   { id: e.GOOGLE_CLIENT_ID || '',   secret: e.GOOGLE_CLIENT_SECRET || '' },
+    linkedin: { id: e.LINKEDIN_CLIENT_ID || '', secret: e.LINKEDIN_CLIENT_SECRET || '' },
+  },
   snsVerify: e.SNS_VERIFY !== 'false',
   razorpay: {
     keyId: e.RAZORPAY_KEY_ID || '',

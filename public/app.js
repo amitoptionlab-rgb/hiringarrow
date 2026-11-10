@@ -71,7 +71,7 @@ function chart({ labels, sent = [], opens = [], clicks = [], height = 210, label
 function authView(mode = 'login') {
   $('#app').innerHTML = `<div class="auth"><h1>Dakghar</h1><p class="muted">Send email to people who asked for it, and land in the inbox.</p>
   <div class="panel"><div class="tabs"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button><button data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Create account</button></div>
-  <form data-form="auth" data-mode="${mode}">
+  ${socialButtons()}<form data-form="auth" data-mode="${mode}">
     ${mode === 'signup' ? '<label>Company or brand name<input name="company" required autocomplete="organization"></label>' : ''}
     <label>Email<input name="email" type="email" required autocomplete="email"></label>
     <label>Password<input name="password" type="password" required minlength="8" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></label>
@@ -691,6 +691,55 @@ document.addEventListener('submit', async (ev) => {
     }
   });
 });
+// ---------- social login (Google, LinkedIn) ----------
+const AUTH_ERRORS = {
+  cancelled: 'Sign-in was cancelled.',
+  email_unverified: 'That account has no verified email address, so we cannot use it.',
+  account_exists: 'An account with this email already exists. Log in with your password.',
+  not_configured: 'That sign-in method is not available yet.',
+  failed: 'Sign-in failed. Please try again, or use email and password.',
+};
+const GOOGLE_SVG = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+const LINKEDIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0A66C2"/><text x="12" y="17" font-size="13" font-weight="700" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif">in</text></svg>';
+let providers = {};
+function socialButtons() {
+  const items = [['google', 'Google', GOOGLE_SVG], ['linkedin', 'LinkedIn', LINKEDIN_SVG]].filter(([k]) => providers[k]);
+  if (!items.length) return '';
+  return `<div class="sso">${items.map(([k, l, svg]) => `<a href="/auth/${k}" rel="nofollow">${svg}<span>Continue with ${l}</span></a>`).join('')}</div><div class="or"><span>or use email</span></div>`;
+}
+fetch('/auth/providers').then((r) => r.json()).then((p) => {
+  providers = p || {};
+  const em = $('.auth input[name=email]');
+  if (!token && em && !em.value) authView(render.mode);
+}).catch(() => {});
+(function socialReturn() {
+  const m = location.hash.match(/^#social=([^&]+)(&new=1)?$/);
+  if (m) {
+    token = m[1]; localStorage.setItem('dk_token', token); me = null;
+    history.replaceState(null, '', location.pathname + '#/overview');
+    if (m[2]) {
+      const iv = setInterval(() => { if (me && $('#main')) { clearInterval(iv); companyStep(); } }, 300);
+      setTimeout(() => clearInterval(iv), 15000);
+    }
+  }
+  const err = new URLSearchParams(location.search).get('auth_error');
+  if (err) {
+    history.replaceState(null, '', location.pathname + location.hash);
+    setTimeout(() => toast(AUTH_ERRORS[err] || AUTH_ERRORS.failed, true), 300);
+  }
+})();
+function companyStep() {
+  modal(`<h2>One last thing</h2><p class="muted">What is your company or brand name? It is shown in your account and your email footers.</p>
+    <form id="companyform"><label>Company or brand name<input name="name" value="${esc(me.name || '')}" maxlength="100" required autofocus></label>
+    <div class="actions"><button type="button" class="ghost" data-act="close">Skip</button><button>Save</button></div></form>`);
+}
+document.addEventListener('submit', async (ev) => {
+  const f = ev.target.closest('#companyform'); if (!f) return; ev.preventDefault();
+  const name = f.elements.name.value.trim(); if (!name) return;
+  try { await api('/tenant', { method: 'PATCH', body: { name } }); me = null; closeModal(); toast('Saved.'); render(); }
+  catch (e) { if (!e.handled) toast(e.message, true); }
+});
+
 window.addEventListener('beforeunload', (e) => { if ((ed.dirty && $('#cform')) || (jr.dirty && $('#jform'))) { e.preventDefault(); e.returnValue = ''; } });
 
 render();
