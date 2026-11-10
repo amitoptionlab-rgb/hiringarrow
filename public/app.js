@@ -556,7 +556,7 @@ async function render() {
     await ({ overview, campaigns, automations: journeysList, contacts, domains, plan, settings }[route] || overview)();
   } catch (e) { if (!e.handled) { toast(e.message, true); if (/not found/i.test(e.message)) location.hash = '#/campaigns'; } }
 }
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => { const inEd = ed.dirty && $('#cform'), inJr = jr.dirty && $('#jform'); if ((inEd || inJr) && !confirm('You have unsaved changes. Leave this page anyway?')) { history.replaceState(null, '', inEd ? (ed.id ? '#/campaigns/' + ed.id : '#/campaigns/new') : (jr.id ? '#/automations/' + jr.id : '#/automations/new')); return; } render(); });
 
 // ---------- events ----------
 document.addEventListener('keydown', (ev) => {
