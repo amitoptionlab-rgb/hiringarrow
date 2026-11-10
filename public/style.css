@@ -210,3 +210,7 @@ pre.code{background:var(--codebg);padding:12px 14px;border-radius:4px;overflow-x
 .auth input{color:#e8f0ef !important;caret-color:#e8f0ef;}
 .auth .tabs button{color:#cfe3e1 !important;}
 .auth .tabs button.on{color:#ffffff !important;}
+
+/* auth input fix 2 */
+.auth input{color:#e8f0ef !important;-webkit-text-fill-color:#e8f0ef !important;background:#0d171c !important;opacity:1 !important;pointer-events:auto !important;position:relative;z-index:2;}
+.auth input:-webkit-autofill{-webkit-text-fill-color:#e8f0ef !important;box-shadow:0 0 0 100px #0d171c inset !important;}
