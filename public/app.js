@@ -460,9 +460,9 @@ async function drawJourney() {
     ${locked ? '<div class="banner"><b>This journey is on.</b> Pause it to change steps. People already inside keep their place.</div>' : ''}
     ${r && r.entered ? `<div class="ribbon"><div><b>${num(r.entered)}</b><span>Entered</span></div><div><b>${num(r.active)}</b><span>In progress</span></div><div><b>${num(r.completed)}</b><span>Finished</span></div><div><b>${num(r.exited)}</b><span>Left early (unsubscribed or condition)</span></div></div>` : ''}
     <fieldset ${locked ? 'disabled' : ''} style="border:0;padding:0;margin:0;min-width:0"><div class="panel"><div class="step"><b>1</b><h2>What starts it</h2></div><div id="jtrig">${triggerFields()}</div>
-    <div class="row"><label>From name<input data-jf="from_name" value="${esc(a.from_name || '')}"></label><label>From email<input data-jf="from_email" type="email" value="${esc(a.from_email || '')}" placeholder="hello@yourdomain.com"></label></div>
-    <div class="row"><label>Reply-To (optional)<input data-jf="reply_to" type="email" value="${esc(a.reply_to || '')}" placeholder="you@yourcompany.com"></label></div></div>
-    <div class="panel"><div class="step"><b>2</b><h2>What happens</h2></div><div id="jsteps">${stepsHtml()}</div></div></fieldset></div>`);
+    </div><div class="panel"><div class="step"><b>2</b><h2>Sender</h2></div><div class="row"><label>From name<input data-jf="from_name" value="${esc(a.from_name || '')}"></label><label>From email<input data-jf="from_email" type="email" value="${esc(a.from_email || '')}" placeholder="hello@yourdomain.com"></label></div>
+    <div class="row"><label>Reply-To (optional)<input data-jf="reply_to" type="email" value="${esc(a.reply_to || '')}" placeholder="you@yourcompany.com"><span class="muted small">Where replies go. Leave empty to use the From email.</span></label></div></div>
+    <div class="panel"><div class="step"><b>3</b><h2>What happens</h2></div><div id="jsteps">${stepsHtml()}</div></div></fieldset></div>`);
 }
 const jdirty = (d = true) => { jr.dirty = d; const e = $('#jdirty'); if (e) e.textContent = d ? 'Unsaved changes' : (jr.id ? 'Saved' : ''); };
 const redrawSteps = () => { const e = $('#jsteps'); if (e) e.innerHTML = stepsHtml(); };
@@ -691,6 +691,6 @@ document.addEventListener('submit', async (ev) => {
     }
   });
 });
-window.addEventListener('beforeunload', (e) => { if (ed.dirty && $('#cform')) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => { if ((ed.dirty && $('#cform')) || (jr.dirty && $('#jform'))) { e.preventDefault(); e.returnValue = ''; } });
 
 render();
