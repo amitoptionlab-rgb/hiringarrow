@@ -6,3 +6,9 @@ node_modules
 .env.*
 !.env.example
 rename-backup-*
+
+client_secret*.json
+social-login.mjs
+patch-*.mjs
+backup-batch3/
+batch3-info*.txt
