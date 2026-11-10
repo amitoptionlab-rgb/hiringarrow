@@ -83,9 +83,9 @@ const NAV = [['overview', 'Overview'], ['campaigns', 'Campaigns'], ['automations
 async function shell(route, html) {
   $('#app').innerHTML = `<div class="shell"><nav class="rail" aria-label="Main"><div class="brand">Dakghar</div>
     ${NAV.map(([k, l]) => `<a href="#/${k}" class="${route === k ? 'on' : ''}" ${route === k ? 'aria-current="page"' : ''}>${l}</a>`).join('')}
-    <div class="sp"></div><div class="tools"><button class="ghost small" data-act="palette" style="color:#d7e1e0;border-color:#4b6068">Search &amp; jump <span class="kbd">Ctrl K</span></button>
-    <button class="ghost small" data-act="theme" style="color:#d7e1e0;border-color:#4b6068">${getTheme() === 'dark' ? 'Light mode' : 'Dark mode'}</button></div>
-    <div class="who">${esc(me.name)}<br>${esc(me.email)}</div><button class="ghost" data-act="logout" style="color:#d7e1e0;border-color:#4b6068">Log out</button></nav>
+    <div class="sp"></div><div class="tools"><button class="ghost small" data-act="palette">Search &amp; jump <span class="kbd">Ctrl K</span></button>
+    <button class="ghost small" data-act="theme">${getTheme() === 'dark' ? 'Light mode' : 'Dark mode'}</button></div>
+    <div class="who">${esc(me.name)}<br>${esc(me.email)}</div><button class="ghost" data-act="logout">Log out</button></nav>
     <main id="main">${html}</main></div>`;
 }
 const skeleton = () => { const m = $('#main'); if (m) m.innerHTML = '<div class="skeleton" aria-busy="true"><i></i><i></i><i></i></div>'; };
