@@ -205,3 +205,8 @@ code{background:var(--codebg);padding:1px 5px;border-radius:3px;font-size:.88em;
 pre.code{background:var(--codebg);padding:12px 14px;border-radius:4px;overflow-x:auto;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:8px 0;white-space:pre-wrap;word-break:break-all}
 .ai-list{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:8px}
 .ai-list li{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);border-radius:4px;padding:10px 12px;background:var(--field)}
+
+/* auth readability fix */
+.auth input{color:#e8f0ef !important;caret-color:#e8f0ef;}
+.auth .tabs button{color:#cfe3e1 !important;}
+.auth .tabs button.on{color:#ffffff !important;}
