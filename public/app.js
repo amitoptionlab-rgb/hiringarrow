@@ -593,7 +593,7 @@ document.addEventListener('input', (ev) => {
 });
 
 document.addEventListener('click', (ev) => {
-  const t = ev.target.closest('[data-act],[data-mode]'); if (!t) return;
+  const t = ev.target.closest('[data-act],button[data-mode]'); if (!t) return;
   if (t.dataset.mode) { render.mode = t.dataset.mode; return authView(render.mode); }
   const { act, id } = t.dataset;
   const done = (fn) => busy(t, fn);
