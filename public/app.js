@@ -213,6 +213,7 @@ async function campaignEditor(id) {
   <div class="panel"><div class="step"><b>1</b><h2>Who and what</h2></div>
     <div class="row"><label>From name<input name="from_name" value="${esc(v.from_name)}" required></label>
     <label>From email<input name="from_email" type="email" value="${esc(v.from_email)}" required placeholder="news@yourdomain.com" list="doms"></label></div>
+    <div class="row"><label>Reply-To (optional)<input name="reply_to" type="email" value="${esc(v.reply_to || '')}" placeholder="you@yourcompany.com"></label></div>
     <datalist id="doms">${domains.map((d) => `<option value="hello@${esc(d.domain)}">`).join('')}</datalist>
     <label>Subject line<input name="subject" value="${esc(v.subject)}" required maxlength="150" placeholder="What is in it for the reader?"></label><div class="tip" id="tip"></div>
     <label style="display:flex;gap:10px;align-items:center;font-weight:400"><input type="checkbox" id="ab" style="width:auto;margin:0" ${abOn ? 'checked' : ''}> Test two subject lines against each other</label>
@@ -238,7 +239,7 @@ const form = () => $('#cform')?.elements;
 const setDirty = (d) => { ed.dirty = d; const e = $('#dirty'); if (e) e.textContent = d ? 'Unsaved changes' : (ed.id ? 'Saved' : ''); };
 function collect() {
   const f = form(), ab = $('#ab').checked;
-  return { name: f.name.value, subject: f.subject.value, subject_b: ab ? f.subject_b.value : '', ab_split: +f.ab_split.value, preheader: f.preheader.value, from_name: f.from_name.value, from_email: f.from_email.value,
+  return { name: f.name.value, subject: f.subject.value, subject_b: ab ? f.subject_b.value : '', ab_split: +f.ab_split.value, preheader: f.preheader.value, from_name: f.from_name.value, from_email: f.from_email.value, reply_to: f.reply_to.value,
     list_id: f.list_id.value || null, segment: ed.seg.rules.length ? ed.seg : null, html: ed.html, send_time_opt: f.send_time_opt.checked };
 }
 function updateTip() { const f = form(); const [cls, msg] = subjectTip(f.subject.value); const t = $('#tip'); t.className = 'tip ' + cls; t.textContent = msg; }
@@ -415,7 +416,7 @@ async function journeyEditor(id) {
   const [lists, camps, a] = await Promise.all([api('/lists'), api('/campaigns'), id === 'new' ? null : api('/automations/' + id)]);
   const t = jr.template && id === 'new' ? JTEMPLATES[jr.template] : null; jr.template = null;
   Object.assign(jr, { id: a ? a.id : null, status: a ? a.status : 'draft', report: a ? a.report : null, dirty: false, lists, camps,
-    a: a ? { name: a.name, trigger: a.trigger_cfg, from_name: a.from_name || me.name, from_email: a.from_email || '', steps: a.steps } : { name: t ? t[0] : 'New journey', trigger: t ? { ...t[2] } : { type: 'subscribed' }, from_name: me.name, from_email: '', steps: t ? t[3]() : [] } });
+    a: a ? { name: a.name, trigger: a.trigger_cfg, from_name: a.from_name || me.name, from_email: a.from_email || '', reply_to: a.reply_to || '', steps: a.steps } : { name: t ? t[0] : 'New journey', trigger: t ? { ...t[2] } : { type: 'subscribed' }, from_name: me.name, from_email: '', reply_to: '', steps: t ? t[3]() : [] } });
   await drawJourney();
   if (jr.status === 'active') render.refresh = setTimeout(() => { if (location.hash === `#/automations/${jr.id}`) render(); }, 8000);
 }
@@ -459,13 +460,14 @@ async function drawJourney() {
     ${locked ? '<div class="banner"><b>This journey is on.</b> Pause it to change steps. People already inside keep their place.</div>' : ''}
     ${r && r.entered ? `<div class="ribbon"><div><b>${num(r.entered)}</b><span>Entered</span></div><div><b>${num(r.active)}</b><span>In progress</span></div><div><b>${num(r.completed)}</b><span>Finished</span></div><div><b>${num(r.exited)}</b><span>Left early (unsubscribed or condition)</span></div></div>` : ''}
     <fieldset ${locked ? 'disabled' : ''} style="border:0;padding:0;margin:0;min-width:0"><div class="panel"><div class="step"><b>1</b><h2>What starts it</h2></div><div id="jtrig">${triggerFields()}</div>
-    <div class="row"><label>From name<input data-jf="from_name" value="${esc(a.from_name || '')}"></label><label>From email<input data-jf="from_email" type="email" value="${esc(a.from_email || '')}" placeholder="hello@yourdomain.com"></label></div></div>
+    <div class="row"><label>From name<input data-jf="from_name" value="${esc(a.from_name || '')}"></label><label>From email<input data-jf="from_email" type="email" value="${esc(a.from_email || '')}" placeholder="hello@yourdomain.com"></label></div>
+    <div class="row"><label>Reply-To (optional)<input data-jf="reply_to" type="email" value="${esc(a.reply_to || '')}" placeholder="you@yourcompany.com"></label></div></div>
     <div class="panel"><div class="step"><b>2</b><h2>What happens</h2></div><div id="jsteps">${stepsHtml()}</div></div></fieldset></div>`);
 }
 const jdirty = (d = true) => { jr.dirty = d; const e = $('#jdirty'); if (e) e.textContent = d ? 'Unsaved changes' : (jr.id ? 'Saved' : ''); };
 const redrawSteps = () => { const e = $('#jsteps'); if (e) e.innerHTML = stepsHtml(); };
 async function saveJourney(quiet) {
-  const body = { name: $('[data-jname]').value, trigger: jr.a.trigger, from_name: jr.a.from_name, from_email: jr.a.from_email, steps: jr.a.steps };
+  const body = { name: $('[data-jname]').value, trigger: jr.a.trigger, from_name: jr.a.from_name, from_email: jr.a.from_email, reply_to: jr.a.reply_to, steps: jr.a.steps };
   if (jr.id) await api('/automations/' + jr.id, { method: 'PUT', body });
   else { const r = await api('/automations', { method: 'POST', body }); jr.id = r.id; history.replaceState(null, '', '#/automations/' + r.id); }
   jr.a.name = body.name; jdirty(false); if (!quiet) toast('Saved.'); return jr.id;

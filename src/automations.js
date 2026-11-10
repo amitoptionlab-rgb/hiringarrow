@@ -17,7 +17,9 @@ async function fields(req) {
   }
   const from_email = String(b.from_email || '').trim().toLowerCase().slice(0, 200);
   if (from_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(from_email)) throw new HttpError(400, 'Enter a valid From email.');
-  return { name, trigger_cfg, from_name: String(b.from_name || '').trim().slice(0, 100) || null, from_email: from_email || null, steps: normalizeSteps(b.steps || []) };
+  const reply_to = String(b.reply_to || '').trim().toLowerCase().slice(0, 200) || null;
+  if (reply_to && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reply_to)) throw new HttpError(400, 'Enter a valid Reply-To email.');
+  return { name, trigger_cfg, from_name: String(b.from_name || '').trim().slice(0, 100) || null, from_email: from_email || null, reply_to, steps: normalizeSteps(b.steps || []) };
 }
 async function get(req) {
   if (!UUID.test(req.params.id)) throw new HttpError(404, 'Journey not found.');
@@ -51,14 +53,14 @@ automations.get('/:id', async (req, res) => {
 
 automations.post('/', async (req, res) => {
   const f = await fields(req);
-  const { rows: [a] } = await q(`INSERT INTO automations (tenant_id, name, trigger_cfg, from_name, from_email, steps) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [tid(req), f.name, f.trigger_cfg, f.from_name, f.from_email, JSON.stringify(f.steps)]);
+  const { rows: [a] } = await q(`INSERT INTO automations (tenant_id, name, trigger_cfg, from_name, from_email, reply_to, steps) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [tid(req), f.name, f.trigger_cfg, f.from_name, f.from_email, f.reply_to, JSON.stringify(f.steps)]);
   res.status(201).json(a);
 });
 automations.put('/:id', async (req, res) => {
   const a = await get(req);
   if (a.status === 'active') throw new HttpError(409, 'Pause the journey before editing it.');
   const f = await fields(req);
-  await q(`UPDATE automations SET name=$2, trigger_cfg=$3, from_name=$4, from_email=$5, steps=$6 WHERE id=$1`, [a.id, f.name, f.trigger_cfg, f.from_name, f.from_email, JSON.stringify(f.steps)]);
+  await q(`UPDATE automations SET name=$2, trigger_cfg=$3, from_name=$4, from_email=$5, reply_to=$6, steps=$7 WHERE id=$1`, [a.id, f.name, f.trigger_cfg, f.from_name, f.from_email, f.reply_to, JSON.stringify(f.steps)]);
   res.json({ ok: true });
 });
 automations.delete('/:id', async (req, res) => {

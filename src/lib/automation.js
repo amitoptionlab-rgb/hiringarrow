@@ -119,9 +119,9 @@ async function sendStepEmail(a, step, c) {
   const name = `${a.name} \u00b7 ${step.subject}`.slice(0, 120);
   const { rows: [ex] } = await q('SELECT id FROM campaigns WHERE automation_id = $1 AND automation_step = $2', [a.id, step.id]);
   let cid = ex?.id;
-  if (cid) await q('UPDATE campaigns SET name=$2, subject=$3, preheader=$4, from_name=$5, from_email=$6, html=$7 WHERE id=$1', [cid, name, step.subject, step.preheader || null, a.from_name, a.from_email, step.html]);
-  else cid = (await q(`INSERT INTO campaigns (tenant_id, name, subject, preheader, from_name, from_email, html, kind, automation_id, automation_step, status)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,'automation',$8,$9,'sending') RETURNING id`, [a.tenant_id, name, step.subject, step.preheader || null, a.from_name, a.from_email, step.html, a.id, step.id])).rows[0].id;
+  if (cid) await q('UPDATE campaigns SET name=$2, subject=$3, preheader=$4, from_name=$5, from_email=$6, html=$7, reply_to=$8 WHERE id=$1', [cid, name, step.subject, step.preheader || null, a.from_name, a.from_email, step.html, a.reply_to || null]);
+  else cid = (await q(`INSERT INTO campaigns (tenant_id, name, subject, preheader, from_name, from_email, html, reply_to, kind, automation_id, automation_step, status)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$10,'automation',$8,$9,'sending') RETURNING id`, [a.tenant_id, name, step.subject, step.preheader || null, a.from_name, a.from_email, step.html, a.id, step.id, a.reply_to || null])).rows[0].id;
   const { rows: [domain] } = await q('SELECT * FROM sending_domains WHERE tenant_id = $1 AND domain = $2', [a.tenant_id, a.from_email.split('@')[1] || '']);
   if ((await allowance(a.tenant_id, domain)).allowed <= 0) return 'retry';        // quota or daily cap reached: try again in an hour
   const { rows: [m] } = await q(`INSERT INTO messages (tenant_id, campaign_id, contact_id, variant) VALUES ($1,$2,$3,'A') ON CONFLICT DO NOTHING RETURNING id`, [a.tenant_id, cid, c.id]);

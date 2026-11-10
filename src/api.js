@@ -299,6 +299,9 @@ const campaignFields = async (req) => {
     send_time_opt: !!b.send_time_opt,
     segment: b.segment && b.segment.rules?.length ? { match: b.segment.match === 'any' ? 'any' : 'all', rules: b.segment.rules.map((r) => ({ field: String(r.field), value: String(r.value ?? '') })) } : null,
   };
+  const rt = String(b.reply_to || '').trim().toLowerCase().slice(0, 200);
+  if (rt && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rt)) throw new HttpError(400, 'Enter a valid Reply-To email.');
+  f.reply_to = rt || null;
   if (f.segment) segmentSql(f.segment, []);                       // validates every rule
   if (f.list_id) {
     const { rows } = await q('SELECT 1 FROM lists WHERE id = $1 AND tenant_id = $2', [f.list_id, tid(req)]);
@@ -313,7 +316,7 @@ const getCampaign = async (req) => {
   if (!c) throw new HttpError(404, 'Campaign not found.');
   return c;
 };
-const COLS = '(tenant_id, name, subject, subject_b, ab_split, preheader, from_name, from_email, domain_id, html, list_id, segment, send_time_opt)';
+const COLS = '(tenant_id, name, subject, subject_b, ab_split, preheader, from_name, from_email, domain_id, html, list_id, segment, send_time_opt, reply_to)';
 
 api.get('/campaigns', async (req, res) => {
   const { rows } = await q(
@@ -333,23 +336,23 @@ api.get('/campaigns/:id', async (req, res) => res.json(await getCampaign(req)));
 api.post('/campaigns', async (req, res) => {
   const f = await campaignFields(req);
   const { rows: [c] } = await q(
-    `INSERT INTO campaigns ${COLS} VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-    [tid(req), f.name, f.subject, f.subject_b, f.ab_split, f.preheader, f.from_name, f.from_email, f.domain_id, f.html, f.list_id, f.segment, f.send_time_opt]);
+    `INSERT INTO campaigns ${COLS} VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+    [tid(req), f.name, f.subject, f.subject_b, f.ab_split, f.preheader, f.from_name, f.from_email, f.domain_id, f.html, f.list_id, f.segment, f.send_time_opt, f.reply_to]);
   res.status(201).json(c);
 });
 api.put('/campaigns/:id', async (req, res) => {
   const c = await getCampaign(req);
   if (!['draft', 'preflight_failed'].includes(c.status)) throw new HttpError(409, c.status === 'scheduled' ? 'Unschedule this campaign before editing it.' : 'Only drafts can be edited.');
   const f = await campaignFields(req);
-  await q(`UPDATE campaigns SET name=$2, subject=$3, subject_b=$4, ab_split=$5, preheader=$6, from_name=$7, from_email=$8, domain_id=$9, html=$10, list_id=$11, segment=$12, send_time_opt=$13, status='draft' WHERE id=$1`,
-    [c.id, f.name, f.subject, f.subject_b, f.ab_split, f.preheader, f.from_name, f.from_email, f.domain_id, f.html, f.list_id, f.segment, f.send_time_opt]);
+  await q(`UPDATE campaigns SET name=$2, subject=$3, subject_b=$4, ab_split=$5, preheader=$6, from_name=$7, from_email=$8, domain_id=$9, html=$10, list_id=$11, segment=$12, send_time_opt=$13, reply_to=$14, status='draft' WHERE id=$1`,
+    [c.id, f.name, f.subject, f.subject_b, f.ab_split, f.preheader, f.from_name, f.from_email, f.domain_id, f.html, f.list_id, f.segment, f.send_time_opt, f.reply_to]);
   res.json({ ok: true });
 });
 api.post('/campaigns/:id/duplicate', async (req, res) => {
   const c = await getCampaign(req);
   const { rows: [n] } = await q(
-    `INSERT INTO campaigns ${COLS} VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-    [tid(req), `${c.name} (copy)`.slice(0, 120), c.subject, c.subject_b, c.ab_split, c.preheader, c.from_name, c.from_email, c.domain_id, c.html, c.list_id, c.segment, c.send_time_opt]);
+    `INSERT INTO campaigns ${COLS} VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+    [tid(req), `${c.name} (copy)`.slice(0, 120), c.subject, c.subject_b, c.ab_split, c.preheader, c.from_name, c.from_email, c.domain_id, c.html, c.list_id, c.segment, c.send_time_opt, c.reply_to]);
   res.status(201).json(n);
 });
 api.delete('/campaigns/:id', async (req, res) => {

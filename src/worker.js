@@ -65,7 +65,7 @@ async function handleJob(job) {
   const { rows: [m] } = await q(
     `SELECT m.id, m.tenant_id, m.campaign_id, m.contact_id, m.status, m.variant,
             c.email, c.first_name, c.last_name, c.custom_fields, c.status AS contact_status,
-            ca.subject, ca.subject_b, ca.preheader, ca.html, ca.from_name, ca.from_email, ca.status AS campaign_status, ca.kind,
+            ca.subject, ca.subject_b, ca.preheader, ca.html, ca.from_name, ca.from_email, ca.reply_to, ca.status AS campaign_status, ca.kind,
             t.postal_address, t.status AS tenant_status
      FROM messages m
      JOIN contacts c ON c.id = m.contact_id
@@ -97,6 +97,7 @@ async function handleJob(job) {
     sent = await sendMail({
       from: `"${m.from_name.replace(/"/g, '')}" <${m.from_email}>`,
       to: m.email,
+      replyTo: m.reply_to || undefined,
       subject: m.variant === 'B' && m.subject_b ? m.subject_b : m.subject,
       html, text,
       headers: bulkHeaders({ messageId: m.id, campaignId: m.campaign_id, tenantId: m.tenant_id, unsubUrl }),
@@ -131,11 +132,16 @@ const worker = new Worker('send', handleJob, {
 });
 worker.on('failed', async (job, err) => {
   console.error(`[send] ${job?.data?.messageId} failed (attempt ${job?.attemptsMade}): ${err.message}`);
-  if (job && job.attemptsMade >= (job.opts.attempts || 1)) {
-    // only a still-queued message may become failed; never overwrite sent/bounced
-    await q(`UPDATE messages SET status = 'failed', last_error = $2 WHERE id = $1 AND status = 'queued'`, [job.data.messageId, String(err.message).slice(0, 300)]);
-    const { rows: [m] } = await q(`SELECT campaign_id FROM messages WHERE id = $1`, [job.data.messageId]);
-    if (m) await finishIfDone(m.campaign_id);
+  try {
+    if (job && job.attemptsMade >= (job.opts.attempts || 1)) {
+      // only a still-queued message may become failed; never overwrite sent/bounced
+      await q(`UPDATE messages SET status = 'failed', last_error = $2 WHERE id = $1 AND status = 'queued'`, [job.data.messageId, String(err.message).slice(0, 300)]);
+      const { rows: [m] } = await q(`SELECT campaign_id FROM messages WHERE id = $1`, [job.data.messageId]);
+      if (m) await finishIfDone(m.campaign_id);
+    }
+  } catch (e) {
+    // an unhandled rejection here would crash the worker; the message stays queued and this line is the trace
+    console.error(`[send] ${job?.data?.messageId} could not be marked failed: ${e.message}`);
   }
 });
 console.log(`Worker running (mail driver: ${config.mailDriver}, ${config.sendRatePerSec} msg/sec)`);
