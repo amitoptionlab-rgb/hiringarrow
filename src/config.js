@@ -20,6 +20,7 @@ export const config = {
   sendRatePerSec: +e.SEND_RATE_PER_SEC || 10,
   requireDomainVerified: e.REQUIRE_DOMAIN_VERIFIED === 'true',
   verifyMx: e.VERIFY_MX === 'true',
+  requireEmailVerify: e.REQUIRE_EMAIL_VERIFY === 'true',   // new signups must confirm their email before the first login
   brevo: { webhookSecret: e.BREVO_WEBHOOK_SECRET || '' },       // protects POST /webhooks/brevo
   snsVerify: e.SNS_VERIFY !== 'false',
   razorpay: {
@@ -44,5 +45,6 @@ if (config.prod) {
   if (config.autoApprove) bad.push('AUTO_APPROVE (must not be true in production)');
   if (!config.snsVerify) bad.push('SNS_VERIFY (must not be false in production)');
   if (config.smtpFallbackUrl === 'log') bad.push('SMTP_URL_FALLBACK (must not be "log" in production)');
+  if (!config.requireDomainVerified) bad.push('REQUIRE_DOMAIN_VERIFIED=true (otherwise any From domain is accepted and new domains skip the warm-up limits)');
   if (bad.length) throw new Error('Set these env vars for production: ' + bad.join(', '));
 }

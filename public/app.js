@@ -672,6 +672,7 @@ document.addEventListener('submit', async (ev) => {
   await busy(btn, async () => {
     if (kind === 'auth') {
       const r = await api('/auth/' + (f.dataset.mode === 'signup' ? 'signup' : 'login'), { method: 'POST', body: val });
+      if (r.verify) { f.innerHTML = '<p><b>Check your inbox.</b> We sent a confirmation link to ' + esc(r.email) + '. Click it, then log in.</p>'; return; }
       token = r.token; localStorage.setItem('dk_token', token); me = null; location.hash = '#/overview'; render();
     } else if (kind === 'tenant') { await api('/tenant', { method: 'PATCH', body: val }); me = null; toast('Saved.'); render(); }
     else if (kind === 'key') {

@@ -19,6 +19,7 @@ import crypto from 'node:crypto';
 import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
 import { allowance } from './lib/limits.js';
+import { sendVerifyMail } from './lib/verify-mail.js';
 
 export const api = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -51,14 +52,22 @@ api.post('/auth/signup', authLimiter, async (req, res) => {
       `INSERT INTO users (tenant_id, email, password_hash, role) VALUES ($1, $2, $3, 'owner') RETURNING id, tenant_id, role`, [t.id, email, hash]);
     return u;
   });
+  if (config.requireEmailVerify) {
+    await sendVerifyMail({ id: user.id, email });
+    return res.status(201).json({ verify: true, email });
+  }
   res.status(201).json({ token: sign(user) });
 });
 
 api.post('/auth/login', authLimiter, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  const { rows: [u] } = await q('SELECT id, tenant_id, role, password_hash FROM users WHERE email = $1', [email]);
+  const { rows: [u] } = await q('SELECT id, tenant_id, role, password_hash, email_verified_at FROM users WHERE email = $1', [email]);
   const ok = u ? await bcrypt.compare(String(req.body.password || ''), u.password_hash) : await bcrypt.compare('x', '$2a$11$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin');
   if (!u || !ok) throw new HttpError(401, 'Email or password is wrong.');
+  if (config.requireEmailVerify && !u.email_verified_at) {
+    await sendVerifyMail({ id: u.id, email });
+    return res.status(403).json({ error: 'Please confirm your email first. We just sent you a new link.' });
+  }
   res.json({ token: sign(u) });
 });
 
@@ -234,7 +243,7 @@ api.delete('/keys/:id', async (req, res) => {
 // ---------- sending domains ----------
 api.get('/domains', async (req, res) => {
   const { rows } = await q('SELECT id, domain, spf_ok, dkim_ok, dmarc_ok, dkim_selector, verified_at FROM sending_domains WHERE tenant_id = $1 ORDER BY domain', [tid(req)]);
-  res.json(rows);
+  res.json(rows.map((r) => ({ ...r, ownership_record: ownershipRecord(tid(req), r.domain) })));
 });
 api.post('/domains', async (req, res) => {
   const domain = need(req.body.domain, 'Enter a domain.').toLowerCase().replace(/^.*@/, '');
@@ -244,7 +253,7 @@ api.post('/domains', async (req, res) => {
   if (n >= plan.max_domains) throw new HttpError(402, `Your plan allows ${plan.max_domains} sending domain(s). Upgrade to add more.`);
   try {
     const { rows: [d] } = await q('INSERT INTO sending_domains (tenant_id, domain, dkim_selector) VALUES ($1, $2, $3) RETURNING id', [tid(req), domain, String(req.body.dkim_selector || '').trim() || null]);
-    res.status(201).json(d);
+    res.status(201).json({ ...d, ownership_record: ownershipRecord(tid(req), domain) });
   } catch (e) { if (e.code === '23505') throw new HttpError(409, 'That domain is already added.'); throw e; }
 });
 api.delete('/domains/:id', async (req, res) => {
@@ -252,6 +261,11 @@ api.delete('/domains/:id', async (req, res) => {
   res.json({ ok: true });
 });
 const txt = async (name) => { try { return (await dns.resolveTxt(name)).map((a) => a.join('')); } catch { return []; } };
+// Proof of ownership: the tenant must publish this TXT record before a domain can become verified.
+// Stateless (HMAC of server secret + tenant + domain): no migration needed, and one tenant's token is useless to another tenant.
+const OWNERSHIP_LABEL = 'hiringarrow-verify';
+const ownershipValue = (tenantId, domain) => OWNERSHIP_LABEL + '=' + crypto.createHmac('sha256', config.signSecret).update('domain-verify:' + tenantId + ':' + domain).digest('hex').slice(0, 32);
+const ownershipRecord = (tenantId, domain) => ({ type: 'TXT', host: '_' + OWNERSHIP_LABEL + '.' + domain, value: ownershipValue(tenantId, domain) });
 api.post('/domains/:id/check', async (req, res) => {
   const { rows: [d] } = await q('SELECT * FROM sending_domains WHERE id = $1 AND tenant_id = $2', [uuid(req.params.id), tid(req)]);
   if (!d) throw new HttpError(404, 'Domain not found.');
@@ -265,10 +279,11 @@ api.post('/domains/:id/check', async (req, res) => {
     if (!dkim) { try { dkim = (await dns.resolveCname(host)).length > 0; } catch { /* none */ } }
   }
   const dmarc = [...await txt(`_dmarc.${d.domain}`), ...(root !== d.domain ? await txt(`_dmarc.${root}`) : [])].some((t) => /^v=DMARC1/i.test(t));
-  const verified = spf && dkim;
+  const owner = (await txt('_' + OWNERSHIP_LABEL + '.' + d.domain)).some((v) => v.trim() === ownershipValue(d.tenant_id, d.domain));
+  const verified = owner && spf && dkim;
   await q('UPDATE sending_domains SET spf_ok = $2, dkim_ok = $3, dmarc_ok = $4, dkim_selector = $5, verified_at = CASE WHEN $6 THEN COALESCE(verified_at, now()) ELSE NULL END WHERE id = $1',
     [d.id, spf, dkim, dmarc, d.dkim_selector, verified]);
-  res.json({ spf, dkim, dmarc, verified, needs_selector: !d.dkim_selector });
+  res.json({ spf, dkim, dmarc, owner, verified, needs_selector: !d.dkim_selector, ownership_record: ownershipRecord(d.tenant_id, d.domain) });
 });
 
 // ---------- campaigns ----------

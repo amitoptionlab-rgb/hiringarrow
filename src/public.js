@@ -2,7 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { config } from './config.js';
 import { q } from './db.js';
-import { signId, verifyId, verifyLink } from './lib/tokens.js';
+import { signId, verifyId, verifyLink, verifyTimed } from './lib/tokens.js';
 import { checkEmail } from './lib/validate.js';
 import { suppress } from './lib/suppress.js';
 import { sendMail } from './lib/mailer.js';
@@ -66,6 +66,14 @@ pub.post('/u/:token', async (req, res) => {
     await q(`INSERT INTO events (tenant_id, type) VALUES ($1, 'unsubscribe')`, [c.tenant_id]);
   }
   res.send(page('Unsubscribed', `<h1>You are unsubscribed</h1><p class="muted">You will not get more emails from this sender.</p>`));
+});
+
+// ---------- account email verification ----------
+pub.get('/verify/:token', async (req, res) => {
+  const id = verifyTimed('v', req.params.token);
+  if (!id || !UUID.test(id)) return res.status(400).send(page('Verify email', '<h1>This link is not valid or has expired</h1><p class="muted">Log in again and we will send you a new one.</p>'));
+  await q('UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1', [id]);
+  res.send(page('Email verified', '<h1>Email verified</h1><p><a href="/">Log in to your account</a></p>'));
 });
 
 // ---------- hosted signup form with double opt-in ----------
