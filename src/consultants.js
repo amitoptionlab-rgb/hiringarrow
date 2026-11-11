@@ -1,6 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { q, HttpError } from './db.js';
+import { q, tx, HttpError } from './db.js';
+import multer from 'multer';
 
 // Consultant profiles: add/edit your own, search public ones across tenants.
 // Mounted by api.js AFTER its auth middleware, so req.user = { uid, tid, role } is always set.
@@ -54,7 +55,7 @@ function clean(b, create) {
 }
 
 const MINE_COLS = `id, full_name, title, skills, experience_yrs, work_auth, engagement, rate_usd_hr, city, state, country, relocate, remote_ok,
-  available_from, status, visibility, contact_email, contact_phone, (resume_text IS NOT NULL) AS has_resume, created_at, updated_at`;
+  available_from, status, visibility, contact_email, contact_phone, (resume_text IS NOT NULL) AS has_resume, EXISTS (SELECT 1 FROM consultant_resumes r WHERE r.consultant_id = consultants.id) AS has_file, created_at, updated_at`;
 const PUBLIC_COLS = `c.id, c.full_name, c.title, c.skills, c.experience_yrs, c.work_auth, c.engagement, c.rate_usd_hr, c.city, c.state, c.country,
   c.relocate, c.remote_ok, c.available_from, c.status, c.updated_at, (c.tenant_id = $1) AS mine`;
 const view = (r) => (r.mine ? r : { ...r, full_name: maskName(r.full_name) });
@@ -129,6 +130,71 @@ consultants.put('/:id', async (req, res) => {
 consultants.delete('/:id', async (req, res) => {
   const { rowCount } = await q('DELETE FROM consultants WHERE id = $1 AND tenant_id = $2', [uuid(req.params.id), tid(req)]);
   if (!rowCount) throw new HttpError(404, 'Profile not found.');
+  res.json({ ok: true });
+});
+
+// ---------- resume file (PDF/DOCX, stored in Postgres table consultant_resumes) ----------
+const RESUME_MAX = 5 * 1024 * 1024;
+const MIME = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+const resumeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: RESUME_MAX, files: 1 } }).single('file');
+const resumeLimiter = limiter(30, 60 * 60 * 1000, 'Too many resume uploads. Try again in an hour.');
+const takeResume = (req, res, next) => resumeUpload(req, res, (err) => {
+  if (!err) return next();
+  next(err.code === 'LIMIT_FILE_SIZE' ? new HttpError(413, 'Resume must be 5 MB or smaller.') : new HttpError(400, 'Upload failed. Send exactly one file in the "file" field.'));
+});
+// Trust the bytes, not the extension or the client's mime type.
+const sniff = (b) => {
+  if (b.length > 5 && b.subarray(0, 5).toString('latin1') === '%PDF-') return 'pdf';
+  if (b.length > 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04) return 'docx';
+  return null;
+};
+async function extractText(kind, buf) {
+  if (kind === 'pdf') { const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js'); return (await pdfParse(buf)).text; }
+  const { default: mammoth } = await import('mammoth');
+  return (await mammoth.extractRawText({ buffer: buf })).value;
+}
+const safeName = (n, kind) => {
+  const base = String(n || 'resume').replace(/[^\w.\- ]+/g, '_').slice(0, 100) || 'resume';
+  return base.toLowerCase().endsWith('.' + kind) ? base : `${base}.${kind}`;
+};
+
+consultants.post('/:id/resume', resumeLimiter, takeResume, async (req, res) => {
+  const id = uuid(req.params.id);
+  if (!req.file) bad('Attach a PDF or DOCX in the "file" field.');
+  const buf = req.file.buffer;
+  const kind = sniff(buf) || bad('Only PDF or DOCX files are accepted.');
+  const { rows: [own] } = await q('SELECT 1 AS ok FROM consultants WHERE id = $1 AND tenant_id = $2', [id, tid(req)]);
+  if (!own) throw new HttpError(404, 'Profile not found.');
+  let text;
+  try { text = String((await extractText(kind, buf)) || '').replace(/\u0000/g, '').replace(/\s+/g, ' ').trim().slice(0, 100000); }
+  catch { bad('Could not read this file. Is it a valid, unprotected PDF or DOCX?'); }
+  await tx(async (c) => {
+    await c.query(
+      `INSERT INTO consultant_resumes (consultant_id, filename, mime, size_bytes, data) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (consultant_id) DO UPDATE SET filename = EXCLUDED.filename, mime = EXCLUDED.mime, size_bytes = EXCLUDED.size_bytes, data = EXCLUDED.data, uploaded_at = now()`,
+      [id, safeName(req.file.originalname, kind), MIME[kind], buf.length, buf]);
+    // Scanned PDFs give no text: keep whatever text the profile already had instead of wiping it.
+    if (text) await c.query('UPDATE consultants SET resume_text = $3 WHERE id = $1 AND tenant_id = $2', [id, tid(req), text]);
+  });
+  res.status(201).json({ ok: true, text_extracted: !!text, size_bytes: buf.length });
+});
+
+consultants.get('/:id/resume', viewLimiter, async (req, res) => {
+  const { rows: [r] } = await q(
+    'SELECT r.filename, r.mime, r.data FROM consultant_resumes r JOIN consultants c ON c.id = r.consultant_id WHERE r.consultant_id = $1 AND c.tenant_id = $2',
+    [uuid(req.params.id), tid(req)]);
+  if (!r) throw new HttpError(404, 'No resume on file.');
+  res.set({ 'Content-Type': r.mime, 'Content-Disposition': `attachment; filename="${r.filename}"`, 'Content-Length': r.data.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }).end(r.data);
+});
+
+consultants.delete('/:id/resume', async (req, res) => {
+  const id = uuid(req.params.id);
+  const done = await tx(async (c) => {
+    const { rowCount } = await c.query('DELETE FROM consultant_resumes WHERE consultant_id = $1 AND consultant_id IN (SELECT id FROM consultants WHERE tenant_id = $2)', [id, tid(req)]);
+    if (rowCount) await c.query('UPDATE consultants SET resume_text = NULL WHERE id = $1 AND tenant_id = $2', [id, tid(req)]);
+    return rowCount;
+  });
+  if (!done) throw new HttpError(404, 'No resume on file.');
   res.json({ ok: true });
 });
 
