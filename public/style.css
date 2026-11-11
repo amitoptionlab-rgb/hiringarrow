@@ -6,7 +6,9 @@
 }
 *{box-sizing:border-box}
 
-body{margin:0;font:15px/1.5 var(--font);background:var(--paper);color:var(--text);font-variant-numeric:tabular-nums}
+body{margin:0;font:15px/1.5 var(--font);background:var(--paper);color:var(--text)}
+/* tabular digits only where numbers must line up */
+table,.ribbon,.meter,.fr,.count,.hbar,.plan .price,.todo{font-variant-numeric:tabular-nums}
 h1{font-size:1.55rem;margin:0 0 4px;letter-spacing:-.01em}
 h2{font-size:1.05rem;margin:0 0 10px}
 p{margin:0 0 10px}
@@ -206,14 +208,19 @@ pre.code{background:var(--codebg);padding:12px 14px;border-radius:4px;overflow-x
 .ai-list{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:8px}
 .ai-list li{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);border-radius:4px;padding:10px 12px;background:var(--field)}
 
-/* auth readability fix */
-.auth input{color:#e8f0ef !important;caret-color:#e8f0ef;}
-.auth .tabs button{color:#cfe3e1 !important;}
-.auth .tabs button.on{color:#ffffff !important;}
-
-/* auth input fix 2 */
-.auth input{color:#e8f0ef !important;-webkit-text-fill-color:#e8f0ef !important;background:#0d171c !important;opacity:1 !important;pointer-events:auto !important;position:relative;z-index:2;}
-.auth input:-webkit-autofill{-webkit-text-fill-color:#e8f0ef !important;box-shadow:0 0 0 100px #0d171c inset !important;}
+/* auth page: theme-aware (replaces the hardcoded dark colours + !important hacks) */
+.auth h1{font-size:1.9rem;margin-bottom:6px}
+.auth>p.muted{margin-bottom:18px}
+.auth .panel{box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.auth input{color:var(--text);caret-color:var(--text)}
+.auth input:-webkit-autofill{-webkit-text-fill-color:var(--text);box-shadow:0 0 0 100px var(--field) inset}
+.auth .tabs button{color:var(--muted)}
+.auth .tabs button.on{color:var(--text)}
+.auth form button{width:100%;padding:11px 14px;margin-top:4px}
+/* dark theme: "[data-theme=dark] button:not(.ghost):not(.danger)" has specificity (0,3,1) and was
+   forcing dark-teal text on tab buttons. Same specificity here + later in the file = tabs win. */
+[data-theme=dark] .tabs button:not(.on){color:var(--muted)}
+[data-theme=dark] .tabs button.on{color:var(--text)}
 
 /* ui pass 1 */
 :root{--fieldb:#b6beb6}
