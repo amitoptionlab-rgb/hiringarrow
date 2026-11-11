@@ -15,6 +15,7 @@ import { startCampaign, runPreflight } from './lib/campaign-send.js';
 import { enrollSafe } from './lib/automation.js';
 import { automations } from './automations.js';
 import { aiRouter } from './ai.js';
+import { consultants } from './consultants.js';
 import crypto from 'node:crypto';
 import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
@@ -81,6 +82,7 @@ const tid = (req) => req.user.tid;
 const testLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user.tid, message: { error: 'Too many test emails. Try again in an hour.' } });
 api.use('/automations', automations);
 api.use('/ai', aiRouter);
+api.use('/consultants', consultants);
 
 api.get('/me', async (req, res) => {
   const { rows: [r] } = await q(
