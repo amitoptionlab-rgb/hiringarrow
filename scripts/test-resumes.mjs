@@ -3,6 +3,12 @@ import JSZip from 'jszip'; // mammoth ki dependency hai, test ke liye real .docx
 import { q, pool } from '../src/db.js';
 import { consultants } from '../src/consultants.js';
 
+// Safety: this script runs DELETE ... LIKE 'ZZTEST %' on tenants, so it must never touch a remote DB.
+const dbHost = new URL(pool.options.connectionString).hostname;
+if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(dbHost)) {
+  console.error('ABORT: test-resumes only runs against a local DB, got host "' + dbHost + '"');
+  process.exit(1);
+}
 const results = [];
 const check = (name, ok, extra = '') => { results.push(!!ok); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : '   -> ' + extra}`); };
 const mk = async (label) => {
