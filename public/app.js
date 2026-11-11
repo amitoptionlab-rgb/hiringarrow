@@ -79,7 +79,7 @@ function authView(mode = 'login') {
 }
 
 // ---------- shell ----------
-const NAV = [['overview', 'Overview'], ['campaigns', 'Campaigns'], ['automations', 'Journeys'], ['contacts', 'Contacts'], ['domains', 'Domains'], ['plan', 'Plan'], ['settings', 'Settings']];
+const NAV = [['overview', 'Overview'], ['campaigns', 'Campaigns'], ['automations', 'Journeys'], ['contacts', 'Contacts'], ['consultants', 'Consultants'], ['domains', 'Domains'], ['plan', 'Plan'], ['settings', 'Settings']];
 async function shell(route, html) {
   $('#app').innerHTML = `<div class="shell"><nav class="rail" aria-label="Main"><div class="brand">HiringArrow</div>
     ${NAV.map(([k, l]) => `<a href="#/${k}" class="${route === k ? 'on' : ''}" ${route === k ? 'aria-current="page"' : ''}>${l}</a>`).join('')}
@@ -553,11 +553,228 @@ async function render() {
       return ['draft', 'preflight_failed'].includes(c.status) ? await campaignEditor(arg) : await campaignReport(arg);
     }
     if (route === 'automations' && arg) return await journeyEditor(arg);
-    await ({ overview, campaigns, automations: journeysList, contacts, domains, plan, settings }[route] || overview)();
+    if (route === 'consultants' && arg) return await consultantDetail(arg);
+    await ({ overview, campaigns, automations: journeysList, contacts, domains, plan, settings, consultants: consultantsPage }[route] || overview)();
   } catch (e) { if (!e.handled) { toast(e.message, true); if (/not found/i.test(e.message)) location.hash = '#/campaigns'; } }
 }
 window.addEventListener('hashchange', () => { const inEd = ed.dirty && $('#cform'), inJr = jr.dirty && $('#jform'); if ((inEd || inJr) && !confirm('You have unsaved changes. Leave this page anyway?')) { history.replaceState(null, '', inEd ? (ed.id ? '#/campaigns/' + ed.id : '#/campaigns/new') : (jr.id ? '#/automations/' + jr.id : '#/automations/new')); return; } render(); });
 
+// ---------- consultants ----------
+const CS = { tab: 'search', mine: [], page: 1 };
+const C_AUTH = ['USC', 'GC', 'GC-EAD', 'H1B', 'H4-EAD', 'OPT', 'CPT', 'TN', 'Other'];
+const C_ENG = ['C2C', 'W2', '1099'];
+const cDate = (d) => (d ? String(d).slice(0, 10) : '');
+const cChips = (a) => (a || []).slice(0, 8).map((s) => `<span class="badge">${esc(s)}</span>`).join(' ');
+const cWhere = (r) => [r.city, r.state].filter(Boolean).join(', ') + (r.remote_ok ? ((r.city || r.state) ? ' · ' : '') + 'remote' : '');
+const cGrid = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px';
+
+async function consultantsPage() {
+  const m = await api('/consultants/mine');
+  CS.mine = m.rows;
+  const tabBtn = (k, l) => `<button type="button" class="${CS.tab === k ? '' : 'ghost'}" data-c="tab" data-t="${k}">${l}</button>`;
+  await shell('consultants', `<div class="head"><div><h1>Consultants</h1><p class="muted">Add your bench, upload resumes and search profiles. Contact details are never shown to other companies.</p></div><button type="button" data-c="new">Add consultant</button></div>
+  <div class="actions" style="margin-bottom:12px">${tabBtn('search', 'Search')}${tabBtn('mine', `My profiles (${m.total})`)}</div><div id="cs-body"></div>`);
+  if (CS.tab === 'mine') cDrawMine(); else await cDrawSearch();
+}
+
+async function cDrawSearch() {
+  $('#cs-body').innerHTML = `<div class="panel" id="cs-filters"><div style="${cGrid}">
+    <label>Keywords<input id="cs-q" placeholder="java kafka -php" maxlength="200"></label>
+    <label>Skills (all of)<input id="cs-skills" placeholder="java, aws"></label>
+    <label>Work authorization<select id="cs-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
+    <label>State<input id="cs-state" placeholder="TX" maxlength="60"></label>
+    <label>Max rate ($/hr)<input id="cs-rate" type="number" min="0" max="1000"></label></div>
+    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cs-remote"> Remote OK</label>
+    <label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cs-reloc"> Will relocate</label>
+    <button type="button" data-c="search">Search</button></div></div><div id="cs-results"></div>`;
+  await cRunSearch(1);
+}
+
+async function cRunSearch(page) {
+  const v = (s) => ($(s)?.value || '').trim();
+  const p = new URLSearchParams({ page });
+  [['q', '#cs-q'], ['skills', '#cs-skills'], ['work_auth', '#cs-auth'], ['state', '#cs-state'], ['max_rate', '#cs-rate']].forEach(([k, s]) => { if (v(s)) p.set(k, v(s)); });
+  if ($('#cs-remote')?.checked) p.set('remote', 'true');
+  if ($('#cs-reloc')?.checked) p.set('relocate', 'true');
+  const r = await api('/consultants/search?' + p);
+  CS.page = r.page;
+  const pages = Math.max(1, Math.ceil(r.total / r.size));
+  const note = r.searched_others ? '' : '<p class="muted small">Only your own profiles are shown. Profiles from other companies appear once your account is approved.</p>';
+  const terms = new Set(`${v('#cs-q')} ${v('#cs-skills').replace(/,/g, ' ')}`.toLowerCase().split(/\s+/).filter((w) => w && !w.startsWith('-')).map((w) => w.replace(/^["']+|["']+$/g, '')).filter((w) => w.length > 1 && w !== 'or' && w !== 'and'));
+  const cHit = (s) => [...terms].some((w) => String(s).toLowerCase().includes(w));
+  const cAgo = (d) => { const n = Math.floor((Date.now() - new Date(d)) / 864e5); return n < 1 ? 'today' : n < 31 ? n + ' d ago' : n < 365 ? Math.floor(n / 30) + ' mo ago' : Math.floor(n / 365) + ' yr ago'; };
+  const rows = r.rows.map((x) => {
+    const sk = [...(x.skills || [])].sort((a, b) => cHit(b) - cHit(a));
+    const chip = (s) => `<span class="cx-sk${cHit(s) ? ' hit' : ''}" title="${esc(s)}">${esc(s)}</span>`;
+    const more = sk.length > 12 ? `<details class="cx-more"><summary>Show More (${sk.length - 12})</summary><div class="cx-skills">${sk.slice(12).map(chip).join('')}</div></details>` : '';
+    return `<div class="ccard cx">
+    <div class="cx-head"><button type="button" class="cname" data-c="view" data-id="${x.id}">${esc(x.full_name)}</button><span class="cx-title">${esc(x.title)}</span>${x.mine ? '<span class="badge">yours</span>' : ''}</div>
+    <div class="cx-top"><div class="cx-av" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg></div>
+      <div class="cx-info">
+        <div class="cx-col"><div><span class="muted">Preferred:</span> ${esc((x.engagement || []).join(' / ') || 'Not set')}</div><div><span class="muted">Location:</span> ${esc(cWhere(x) || 'Not set')}</div><div><span class="muted">Rate:</span> ${x.rate_usd_hr != null ? '$' + esc(x.rate_usd_hr) + '/hr' : 'No rate disclosed'}</div></div>
+        <div class="cx-col"><div><span class="muted">Years Exp:</span> ${x.experience_yrs != null ? esc(x.experience_yrs) : 'Not disclosed'}</div><div><span class="muted">Updated:</span> ${esc(cAgo(x.updated_at))}</div><div><span class="muted">Work auth:</span> ${esc(x.work_auth || 'Not set')}</div></div>
+        <div class="cx-col"><div>${x.relocate ? 'Willing to relocate' : 'Not willing to relocate'}</div><div><span class="muted">Remote:</span> ${x.remote_ok ? 'Yes' : 'No'}</div><div><span class="muted">Available:</span> ${x.available_from ? esc(cDate(x.available_from)) : 'Now'}</div></div>
+      </div></div>
+    <div class="cx-skills">${sk.length ? sk.slice(0, 12).map(chip).join('') : '<span class="muted small">No skills listed</span>'}</div>${more}
+    <div class="cx-foot"><span class="muted small">${x.mine ? '' : 'Contact hidden'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button><input type="checkbox" class="csel" aria-label="Select ${esc(x.full_name)}"></div></div></div>`;
+  }).join('');
+  $('#cs-results').innerHTML = `${note}${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div>
+    <div class="actions" style="margin-top:10px;align-items:center"><span class="muted small">${num(r.total)} found · page ${r.page} of ${pages}</span>
+    ${r.page > 1 ? `<button type="button" class="ghost small" data-c="page" data-p="${r.page - 1}">Previous</button>` : ''}${r.page < pages ? `<button type="button" class="ghost small" data-c="page" data-p="${r.page + 1}">Next</button>` : ''}</div></div>` : '<div class="panel"><p>No consultants match. Try fewer filters.</p></div>'}`;
+}
+
+function cDrawMine() {
+  $('#cs-body').innerHTML = CS.mine.length ? `<div class="panel"><div class="tablewrap"><table><thead><tr><th>Consultant</th><th>Skills</th><th>Status</th><th>Visibility</th><th>Resume</th><th></th></tr></thead><tbody>
+    ${CS.mine.map((x) => `<tr><td><b>${esc(x.full_name)}</b><br><span class="muted small">${esc(x.title)}</span></td><td>${cChips(x.skills)}</td><td>${esc(x.status)}</td><td>${esc(x.visibility)}</td><td>${x.has_file ? 'Yes' : (x.has_resume ? 'Text only' : '–')}</td>
+    <td><div class="actions"><button type="button" class="ghost small" data-c="edit" data-id="${x.id}">Edit</button><button type="button" class="ghost small" data-c="del" data-id="${x.id}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></div>`
+    : '<div class="panel"><p>No consultants yet. Click "Add consultant", save, and then upload a resume.</p></div>';
+}
+
+async function cView(id) {
+  const c = await api('/consultants/' + id);
+  const text = String(c.resume_text || '');
+  const facts = [c.experience_yrs != null ? c.experience_yrs + ' yrs' : '', c.work_auth, (c.engagement || []).join('/'), c.rate_usd_hr != null ? '$' + c.rate_usd_hr + '/hr' : '', cWhere(c), c.available_from ? 'available ' + cDate(c.available_from) : ''].filter(Boolean).map(esc).join(' · ');
+  modal(`<h2>${esc(c.full_name)}</h2><p class="muted">${esc(c.title)}</p><p>${cChips(c.skills)}</p><p class="small">${facts}</p>
+    ${c.mine ? `<p class="small">${esc(c.contact_email || '')} ${esc(c.contact_phone || '')}</p>` : '<p class="muted small">Contact details are hidden.</p>'}
+    ${text ? `<h3>Resume text</h3><div class="small" style="white-space:pre-wrap;max-height:260px;overflow:auto">${esc(text.slice(0, 3000))}${text.length > 3000 ? '…' : ''}</div>` : ''}
+    <div class="actions" style="margin-top:12px"><button type="button" class="ghost" data-c="close">Close</button></div>`);
+}
+
+function cResumeBlock(id) {
+  const r = CS.mine.find((x) => x.id === id) || {};
+  return `<div class="muted small">${r.has_file ? 'A resume is on file. Uploading a new one replaces it.' : 'No resume yet. PDF or DOCX, up to 5 MB. Its text becomes searchable.'}</div>
+    <div class="actions" style="margin-top:8px;align-items:center"><input type="file" id="cf-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+    <button type="button" class="ghost" data-c="r-up" data-id="${id}">Upload</button>${r.has_file ? `<button type="button" class="ghost" data-c="r-down" data-id="${id}">Download</button><button type="button" class="ghost" data-c="r-del" data-id="${id}">Remove</button>` : ''}</div>`;
+}
+
+function cOpenForm(id) {
+  const r = CS.mine.find((x) => x.id === id) || {};
+  const inp = (k, label, extra = '') => `<label>${label}<input id="cf-${k}" value="${esc(r[k] ?? '')}" ${extra}></label>`;
+  const sel = (k, label, opts, cur) => `<label>${label}<select id="cf-${k}">${opts.map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const eng = (r.engagement || []).map((x) => String(x).toUpperCase());
+  modal(`<h2>${id ? 'Edit consultant' : 'Add consultant'}</h2>
+    <div style="${cGrid}">${inp('full_name', 'Full name', 'maxlength="120" autofocus')}${inp('title', 'Job title', 'maxlength="150"')}
+    <label>Skills (comma separated)<input id="cf-skills" value="${esc((r.skills || []).join(', '))}" placeholder="java, spring boot, aws"></label>
+    ${inp('experience_yrs', 'Experience (years)', 'type="number" min="0" max="60" step="0.5"')}
+    ${sel('work_auth', 'Work authorization', [['', 'Not set'], ...C_AUTH.map((a) => [a, a])], r.work_auth || '')}
+    ${inp('rate_usd_hr', 'Rate ($/hr)', 'type="number" min="0" max="1000" step="0.01"')}
+    ${inp('city', 'City', 'maxlength="60"')}${inp('state', 'State', 'maxlength="60"')}
+    <label>Available from<input id="cf-available_from" type="date" value="${esc(cDate(r.available_from))}"></label>
+    ${sel('status', 'Status', [['available', 'Available'], ['placed', 'Placed'], ['inactive', 'Inactive']], r.status || 'available')}
+    ${sel('visibility', 'Visible to other companies', [['public', 'Public (name masked)'], ['private', 'Private (only you)']], r.visibility || 'public')}
+    ${inp('contact_email', 'Contact email (private)', 'type="email" maxlength="200"')}${inp('contact_phone', 'Contact phone (private)', 'maxlength="30"')}</div>
+    <div class="actions" style="margin:10px 0;align-items:center">${C_ENG.map((e) => `<label style="display:inline-flex;gap:4px;align-items:center;margin:0"><input type="checkbox" data-ceng value="${e}" ${eng.includes(e) ? 'checked' : ''}> ${e}</label>`).join('')}
+    <label style="display:inline-flex;gap:4px;align-items:center;margin:0"><input type="checkbox" id="cf-relocate" ${r.relocate ? 'checked' : ''}> Will relocate</label>
+    <label style="display:inline-flex;gap:4px;align-items:center;margin:0"><input type="checkbox" id="cf-remote_ok" ${r.remote_ok ? 'checked' : ''}> Remote OK</label></div>
+    <h3>Resume</h3>${id ? `<div id="cf-rbox">${cResumeBlock(id)}</div>` : '<p class="muted small">Save the profile first, then upload a resume.</p>'}
+    <div class="actions" style="margin-top:14px"><button type="button" class="ghost" data-c="close">Cancel</button><button type="button" data-c="save" data-id="${id || ''}">Save</button></div>`);
+}
+
+function cCollect() {
+  const g = (k) => ($(`#cf-${k}`)?.value ?? '').trim();
+  return { full_name: g('full_name'), title: g('title'), skills: g('skills'), experience_yrs: g('experience_yrs'), work_auth: g('work_auth'),
+    engagement: [...document.querySelectorAll('[data-ceng]:checked')].map((e) => e.value), rate_usd_hr: g('rate_usd_hr'), city: g('city'), state: g('state'),
+    relocate: !!$('#cf-relocate')?.checked, remote_ok: !!$('#cf-remote_ok')?.checked, available_from: g('available_from'), status: g('status'), visibility: g('visibility'),
+    contact_email: g('contact_email'), contact_phone: g('contact_phone') };
+}
+
+async function cRefreshMine(id) {
+  CS.mine = (await api('/consultants/mine')).rows;
+  const box = $('#cf-rbox'); if (box && id) box.innerHTML = cResumeBlock(id);
+}
+
+async function consultantDetail(id) {
+  await shell('consultants', '<div class="skeleton" aria-busy="true"><i></i><i></i><i></i></div>');
+  try {
+    const c = await api('/consultants/' + id);
+    let hasFile = false;
+    if (c.mine) { CS.mine = (await api('/consultants/mine')).rows; hasFile = !!CS.mine.find((x) => x.id === id)?.has_file; }
+    if (location.hash !== '#/consultants/' + id) return;
+    const showText = c.mine; // false = dusri companies ko resume text nahi dikhana
+    const ago = (d) => { const n = Math.floor((Date.now() - new Date(d)) / 864e5); return n < 1 ? 'today' : n < 31 ? n + ' d ago' : n < 365 ? Math.floor(n / 30) + ' mo ago' : Math.floor(n / 365) + ' yr ago'; };
+    const f = (label, val) => `<div class="cd-f"><span class="muted small">${label}</span><b>${esc(val == null || val === '' ? '-' : val)}</b></div>`;
+    const sk = c.skills || [];
+    const text = String(c.resume_text || '');
+    const personal = [
+      f('Job Title', c.title), f('Work Authorization', c.work_auth), f('Years of Experience', c.experience_yrs),
+      f('Engagement', (c.engagement || []).join(' / ')), f('Rate', c.rate_usd_hr != null ? '$' + c.rate_usd_hr + '/hr' : ''), f('Candidate Status', c.status),
+      f('City', c.city), f('State', c.state), f('Country', c.country),
+      f('Willing to relocate', c.relocate ? 'Yes' : 'No'), f('Remote Status', c.remote_ok ? 'Remote OK' : 'On-site'), f('Available From', cDate(c.available_from)),
+      c.mine ? f('Visibility', c.visibility) + f('Contact Email', c.contact_email) + f('Contact Phone', c.contact_phone) : f('Contact', 'Hidden from other companies'),
+    ].join('');
+    $('#main').innerHTML = `<div class="panel cd-head"><div class="cx-av" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg></div>
+      <div class="cd-id"><h1>${esc(c.full_name)}</h1><div class="muted">${esc(c.title)}</div><div class="small">${esc(cWhere(c) || 'Location not set')}${c.experience_yrs != null ? ' · ' + esc(c.experience_yrs) + ' yrs experience' : ''}</div></div>
+      <div class="cd-side small muted">Status: <b>${esc(c.status)}</b><br>Updated ${esc(ago(c.updated_at))}${c.mine ? '<br><span class="badge">yours</span>' : ''}</div></div>
+      <details class="panel cd-sec" open><summary>Personal Details</summary><div class="cd-grid">${personal}</div></details>
+      <details class="panel cd-sec" open><summary>Skills (${sk.length})</summary><div class="cx-skills" style="margin-top:12px">${sk.length ? sk.map((s) => `<span class="cx-sk" title="${esc(s)}">${esc(s)}</span>`).join('') : '<span class="muted small">No skills listed</span>'}</div></details>
+      <details class="panel cd-sec" open><summary>Resume</summary>${hasFile ? '<div id="cd-prev" class="cd-prev"><p class="muted small">Loading resume...</p></div>' : showText ? (text ? `<div class="cd-text">${esc(text)}</div>` : '<p class="muted small">No resume on this profile.</p>') : '<p class="muted small">Resume is not shown to other companies.</p>'}</details>
+      <div class="cd-bar"><a class="cd-btn" href="#/consultants">Previous</a>${hasFile ? `<button type="button" class="ghost" data-c="r-down" data-id="${id}">Download Resume</button>` : ''}</div>`;
+    cLoadPreview(id);
+  } catch (e) {
+    if (location.hash !== '#/consultants/' + id) return;
+    $('#main').innerHTML = `<div class="panel"><p>${esc(e.message || 'Could not load this profile.')}</p><a class="cd-btn" href="#/consultants">Back to consultants</a></div>`;
+  }
+}
+
+async function cLoadPreview(id) {
+  const box = $('#cd-prev'); if (!box) return;
+  try {
+    const p = await api(`/consultants/${id}/resume/preview`);
+    if (p.kind === 'docx') {
+      box.innerHTML = '<iframe class="cd-frame" sandbox="" title="Resume preview"></iframe>';
+      box.firstChild.srcdoc = `<!doctype html><meta charset="utf-8"><style>body{font:14px/1.5 Georgia,serif;margin:24px;max-width:820px;color:#111;background:#fff}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:4px 8px}img{max-width:100%}</style>${p.html}`;
+      return;
+    }
+    const r = await fetch(`/api/consultants/${id}/resume`, { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) throw new Error('Preview failed.');
+    const url = URL.createObjectURL(await r.blob());
+    box.innerHTML = `<iframe class="cd-frame" src="${url}#view=FitH" title="Resume preview"></iframe><a class="cd-btn cd-open" href="${url}" target="_blank" rel="noopener">Open in new tab</a>`;
+  } catch (e) {
+    box.innerHTML = `<p class="muted small">${esc(e.message || 'Preview not available.')} Use Download Resume.</p>`;
+  }
+}
+
+async function cDownload(id) {
+  const r = await fetch(`/api/consultants/${id}/resume`, { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Download failed.'); }
+  const m = (r.headers.get('content-disposition') || '').match(/filename="([^"]+)"/);
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement('a'); a.href = url; a.download = m ? m[1] : 'resume'; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && ev.target.closest?.('#cs-filters') && ev.target.tagName === 'INPUT' && ev.target.type !== 'checkbox') { ev.preventDefault(); busy(null, () => cRunSearch(1)); }
+});
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('[data-c]'); if (!t) return;
+  const { c, id } = t.dataset;
+  if (c === 'close') return closeModal();
+  if (c === 'tab') { CS.tab = t.dataset.t; return busy(null, consultantsPage); }
+  if (c === 'new') return cOpenForm(null);
+  if (c === 'edit') return cOpenForm(id);
+  if (c === 'view') { window.open('#/consultants/' + id, '_blank'); return; }
+  if (c === 'search') return busy(t, () => cRunSearch(1));
+  if (c === 'page') return busy(t, () => cRunSearch(+t.dataset.p));
+  if (c === 'save') return busy(t, async () => {
+    const res = await api(id ? '/consultants/' + id : '/consultants', { method: id ? 'PUT' : 'POST', body: cCollect() });
+    closeModal(); toast('Saved.'); CS.tab = 'mine'; await consultantsPage();
+    if (!id) cOpenForm(res.id);
+  });
+  if (c === 'del') { if (!confirm('Delete this profile and its resume?')) return; return busy(t, async () => { await api('/consultants/' + id, { method: 'DELETE' }); toast('Deleted.'); await consultantsPage(); }); }
+  if (c === 'r-up') return busy(t, async () => {
+    const file = $('#cf-file')?.files[0];
+    if (!file) throw new Error('Choose a PDF or DOCX file first.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Resume must be 5 MB or smaller.');
+    const fd = new FormData(); fd.append('file', file);
+    const r = await api(`/consultants/${id}/resume`, { method: 'POST', form: fd });
+    toast(r.text_extracted ? 'Resume uploaded and indexed for search.' : 'Resume saved, but no text could be read (scanned PDF?), so it is not searchable.');
+    await cRefreshMine(id);
+  });
+  if (c === 'r-down') return busy(t, () => cDownload(id));
+  if (c === 'r-del') { if (!confirm('Remove this resume?')) return; return busy(t, async () => { await api(`/consultants/${id}/resume`, { method: 'DELETE' }); toast('Resume removed.'); await cRefreshMine(id); }); }
+});
 // ---------- events ----------
 document.addEventListener('keydown', (ev) => {
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k' && token && me) { ev.preventDefault(); return activeModal ? closeModal() : openPalette(); }

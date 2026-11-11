@@ -166,7 +166,7 @@ consultants.post('/:id/resume', resumeLimiter, takeResume, async (req, res) => {
   const { rows: [own] } = await q('SELECT 1 AS ok FROM consultants WHERE id = $1 AND tenant_id = $2', [id, tid(req)]);
   if (!own) throw new HttpError(404, 'Profile not found.');
   let text;
-  try { text = String((await extractText(kind, buf)) || '').replace(/\u0000/g, '').replace(/\s+/g, ' ').trim().slice(0, 100000); }
+  try { text = String((await extractText(kind, buf)) || '').replace(/\u0000/g, '').replace(/[^\S\n]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 100000); }
   catch { bad('Could not read this file. Is it a valid, unprotected PDF or DOCX?'); }
   await tx(async (c) => {
     await c.query(
@@ -185,6 +185,18 @@ consultants.get('/:id/resume', viewLimiter, async (req, res) => {
     [uuid(req.params.id), tid(req)]);
   if (!r) throw new HttpError(404, 'No resume on file.');
   res.set({ 'Content-Type': r.mime, 'Content-Disposition': `attachment; filename="${r.filename}"`, 'Content-Length': r.data.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }).end(r.data);
+});
+
+consultants.get('/:id/resume/preview', viewLimiter, async (req, res) => {
+  const { rows: [r] } = await q(
+    'SELECT r.mime, r.data FROM consultant_resumes r JOIN consultants c ON c.id = r.consultant_id WHERE r.consultant_id = $1 AND c.tenant_id = $2',
+    [uuid(req.params.id), tid(req)]);
+  if (!r) throw new HttpError(404, 'No resume on file.');
+  res.set('Cache-Control', 'private, no-store');
+  if (r.mime === MIME.pdf) return res.json({ kind: 'pdf' });
+  const { default: mammoth } = await import('mammoth');
+  const { value } = await mammoth.convertToHtml({ buffer: r.data });
+  res.json({ kind: 'docx', html: value });
 });
 
 consultants.delete('/:id/resume', async (req, res) => {
