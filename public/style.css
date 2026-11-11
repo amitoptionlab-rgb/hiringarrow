@@ -236,3 +236,34 @@ pre.code{background:var(--codebg);padding:12px 14px;border-radius:4px;overflow-x
 
 /* ui pass 3 */
 @media (max-width:820px){button.small{padding:9px 14px}}
+
+/* theme: light-blue + saffron */
+:root{--ink:#16324f;--ink2:#22446a;--paper:#f3f8fd;--panel:#ffffff;--line:#cfe0f1;--line2:#e3eef9;--text:#14263a;--muted:#5b7186;
+  --teal:#ff9933;--teal-d:#e8851f;--field:#ffffff;--fieldb:#b9d0e8;--track:#dbe8f5;--codebg:#e8f1fb;--warnbg:#fff3df;--badbg:#fbe5e1;--hover:#e6f1fc}
+button,.btn{color:var(--ink)}
+a{color:#1f5fa8}
+button.ghost{color:#1f5fa8}
+:focus-visible{outline-color:#7fb2e5}
+.rail a.on{color:var(--ink)}
+.step b{color:var(--ink)}
+.badge{background:#e3edf8;color:#34506b}
+.fr .bar i{background:#2b7bd0}
+.fr:nth-child(2) .bar i{background:#4f97e0}.fr:nth-child(3) .bar i{background:#7db4ea}.fr:nth-child(4) .bar i{background:#a9cdf2}
+[data-theme=dark]{--ink:#0b1626;--ink2:#15263d;--paper:#0e1a2b;--panel:#14243a;--line:#27415e;--text:#e6eef8;--muted:#94a9c0;
+  --field:#0c1727;--fieldb:#38557a;--track:#223650;--codebg:#1c3049;--line2:#1f3550;--warnbg:#3a2c10;--badbg:#3b1d1a;--hover:#1a3350;--teal:#ffa94d;--teal-d:#ffbb70}
+[data-theme=dark] a{color:#7db8f0}
+[data-theme=dark] button.ghost{color:#7db8f0}
+.rail button.ghost{color:#d7e1e0;border-color:#4b6068}
+
+/* theme: gradient */
+body{background-color:var(--paper);background-image:linear-gradient(160deg,#e6f2ff 0%,#f3f8fd 45%,#fff0dc 100%);background-attachment:fixed}
+[data-theme=dark] body{background-image:linear-gradient(160deg,#0b1626 0%,#10203a 55%,#2a2216 100%)}
+button,.btn{background-image:linear-gradient(135deg,#ffb454,#ff9933)}
+[data-theme=dark] button:not(.ghost):not(.danger){background-image:linear-gradient(135deg,#ffbb70,#ffa94d)}
+.rail{background-image:linear-gradient(180deg,#1f5fa8 0%,#16324f 100%)}
+[data-theme=dark] .rail{background-image:linear-gradient(180deg,#15263d 0%,#0b1626 100%)}
+.auth .panel{border-top:3px solid #ff9933}
+
+/* theme: gradient-fix */
+.tabs button,.modes button,.rail button,button.ghost,button.danger{background-image:none}
+[data-theme=dark] .tabs button:not(.ghost):not(.danger),[data-theme=dark] .modes button:not(.ghost):not(.danger),[data-theme=dark] .rail button:not(.ghost):not(.danger){background-image:none}
