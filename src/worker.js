@@ -54,8 +54,13 @@ async function recordSent(m, { providerMsgId, via }) {
   if (!saved) return;
   if (!counted) { console.warn('[send] ' + m.id + ' was no longer queued when the send was recorded (already bounced/complained?). Usage not counted.'); return; }
   try {
-    await q(`INSERT INTO usage_counters (tenant_id, period, emails_sent) VALUES ($1, date_trunc('month', now())::date, 1)
-             ON CONFLICT (tenant_id, period) DO UPDATE SET emails_sent = usage_counters.emails_sent + 1`, [m.tenant_id]);
+    const { rows: [u] } = await q(`INSERT INTO usage_counters (tenant_id, period, emails_sent) VALUES ($1, date_trunc('month', now())::date, 1)
+             ON CONFLICT (tenant_id, period) DO UPDATE SET emails_sent = usage_counters.emails_sent + 1 RETURNING emails_sent`, [m.tenant_id]);
+    // Plan quota first. Every message beyond the plan's monthly quota consumes one purchased credit (once per message).
+    await q(`INSERT INTO credit_ledger (tenant_id, kind, amount, message_id, idempotency_key)
+             SELECT $1::uuid, 'consume'::text, -1, $2::uuid, $4::text
+             WHERE $3::int > (SELECT p.monthly_emails FROM tenants t JOIN plans p ON p.id = t.plan_id WHERE t.id = $1::uuid)
+             ON CONFLICT (idempotency_key) DO NOTHING`, [m.tenant_id, m.id, u.emails_sent, 'msg:' + m.id]);
   } catch (e) {
     console.error(`[send] ${m.id} usage counter update failed (message itself is marked sent): ${e.message}`);
   }
@@ -81,7 +86,7 @@ async function handleJob(job) {
   }
   if (await circuitTripped(m.campaign_id)) return;
 
-  const { rows: sup } = await q(`SELECT 1 FROM suppressions WHERE tenant_id = $1 AND email = $2`, [m.tenant_id, m.email]);
+  const { rows: sup } = await q(`SELECT 1 FROM suppressions WHERE tenant_id = $1 AND email = $2 UNION ALL SELECT 1 FROM global_suppressions WHERE email = $2`, [m.tenant_id, m.email]);
   if (sup.length || m.contact_status !== 'subscribed') {
     await q(`UPDATE messages SET status = 'failed', last_error = 'suppressed' WHERE id = $1`, [m.id]);
     return finishIfDone(m.campaign_id);

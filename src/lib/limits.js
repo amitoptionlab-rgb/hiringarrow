@@ -16,9 +16,13 @@ export async function allowance(tenantId, domain) {
   const { rows: [u] } = await q(
     `SELECT COALESCE((SELECT emails_sent FROM usage_counters WHERE tenant_id = $1 AND period = date_trunc('month', now())::date), 0)::int AS month_sent,
             (SELECT count(*) FROM messages WHERE tenant_id = $1 AND status = 'queued')::int AS queued,
+            (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE tenant_id = $1)::int AS credits,
             (SELECT count(*) FROM messages WHERE tenant_id = $1 AND sent_at >= date_trunc('day', now()))::int AS today`, [tenantId]);
   const dayLimit = Math.min(t.daily_send_cap, warmupCap(domain?.verified_at));
-  const monthLeft = t.monthly_emails - u.month_sent - u.queued;
+  // Plan quota first; purchased credits cover everything beyond it. Credits never raise the daily cap or warm-up limit.
+  const used = u.month_sent + u.queued;
+  const queuedOver = Math.max(0, used - t.monthly_emails) - Math.max(0, u.month_sent - t.monthly_emails); // queued, not yet charged to credits
+  const monthLeft = Math.max(0, t.monthly_emails - used) + Math.max(0, u.credits - queuedOver);
   const dayLeft = dayLimit - u.today - u.queued;
   return {
     allowed: Math.max(0, Math.min(monthLeft, dayLeft)),
