@@ -723,19 +723,23 @@ async function consultantDetail(id) {
   }
 }
 
+document.addEventListener('click', (e) => {
+  if (e.target.closest && e.target.closest('.cd-exit') && document.fullscreenElement) document.exitFullscreen();
+});
+
 async function cLoadPreview(id) {
   const box = $('#cd-prev'); if (!box) return;
   try {
     const p = await api(`/consultants/${id}/resume/preview`);
     if (p.kind === 'docx') {
-      box.innerHTML = '<iframe class="cd-frame" sandbox="" title="Resume preview"></iframe>';
-      box.firstChild.srcdoc = `<!doctype html><meta charset="utf-8"><style>body{font:14px/1.5 Georgia,serif;margin:24px;max-width:820px;color:#111;background:#fff}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:4px 8px}img{max-width:100%}</style>${p.html}`;
+      box.innerHTML = '<iframe class="cd-frame" sandbox="" title="Resume preview"></iframe><button type="button" class="cd-exit">Exit full screen</button>';
+      box.firstChild.srcdoc = `<!doctype html><meta charset="utf-8"><style>body{font:14px/1.5 Georgia,serif;margin:0 auto;padding:24px;max-width:820px;color:#111;background:#fff}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:4px 8px}img{max-width:100%}</style>${p.html}`;
       return;
     }
     const r = await fetch(`/api/consultants/${id}/resume`, { headers: { Authorization: 'Bearer ' + token } });
     if (!r.ok) throw new Error('Preview failed.');
     const url = URL.createObjectURL(await r.blob());
-    box.innerHTML = `<iframe class="cd-frame" src="${url}#view=FitH" title="Resume preview"></iframe><a class="cd-btn cd-open" href="${url}" target="_blank" rel="noopener">Open in new tab</a>`;
+    box.innerHTML = `<iframe class="cd-frame" src="${url}#view=FitH" title="Resume preview"></iframe><a class="cd-btn cd-open" href="${url}" target="_blank" rel="noopener">Open in new tab</a><button type="button" class="cd-exit">Exit full screen</button>`;
   } catch (e) {
     box.innerHTML = `<p class="muted small">${esc(e.message || 'Preview not available.')} Use Download Resume.</p>`;
   }
