@@ -573,8 +573,8 @@ async function consultantsPage() {
   CS.mine = m.rows;
   const tabBtn = (k, l) => `<button type="button" class="${CS.tab === k ? '' : 'ghost'}" data-c="tab" data-t="${k}">${l}</button>`;
   await shell('consultants', `<div class="head"><div><h1>Consultants</h1><p class="muted">Add your bench, upload resumes and search profiles. Contact details are never shown to other companies.</p></div><button type="button" data-c="new">Add consultant</button></div>
-  <div class="actions" style="margin-bottom:12px">${tabBtn('search', 'Search')}${tabBtn('mine', `My profiles (${m.total})`)}</div><div id="cs-body"></div>`);
-  if (CS.tab === 'mine') cDrawMine(); else await cDrawSearch();
+  <div class="actions" style="margin-bottom:12px">${tabBtn('search', 'Search')}${tabBtn('match', 'JD match')}${tabBtn('mine', `My profiles (${m.total})`)}</div><div id="cs-body"></div>`);
+  if (CS.tab === 'mine') cDrawMine(); else if (CS.tab === 'match') cDrawMatch(); else await cDrawSearch();
 }
 
 async function cDrawSearch() {
@@ -588,6 +588,31 @@ async function cDrawSearch() {
     <label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cs-reloc"> Will relocate</label>
     <button type="button" data-c="search">Search</button></div></div><div id="cs-results"></div>`;
   await cRunSearch(1);
+}
+
+function cDrawMatch() {
+  $('#cs-body').innerHTML = `<div class="panel"><label>Job description<textarea id="cm-jd" rows="8" maxlength="20000" placeholder="Paste the requirement / JD here"></textarea></label>
+    <div style="${cGrid};margin-top:10px">
+    <label>Skills (optional, overrides JD)<input id="cm-skills" placeholder="java, spring boot, aws"></label>
+    <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
+    <label>State<input id="cm-state" placeholder="TX" maxlength="60"></label>
+    <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label></div>
+    <div class="actions" style="margin-top:10px"><button type="button" data-c="match">Find matches</button></div></div><div id="cm-results"></div>`;
+}
+
+async function cRunMatch() {
+  const v = (s) => ($(s)?.value || '').trim();
+  const body = {};
+  [['jd', '#cm-jd'], ['skills', '#cm-skills'], ['work_auth', '#cm-auth'], ['state', '#cm-state'], ['max_rate', '#cm-rate']].forEach(([k, s]) => { if (v(s)) body[k] = v(s); });
+  if (!body.jd && !body.skills) throw new Error('Paste a JD or enter skills first.');
+  const r = await api('/consultants/match', { method: 'POST', body });
+  const used = r.skills_used || [];
+  const chip = (s) => `<span class="cx-sk hit" title="${esc(s)}">${esc(s)}</span>`;
+  const rows = r.rows.map((x) => `<div class="ccard cx">
+    <div class="cx-head"><button type="button" class="cname" data-c="view" data-id="${x.id}">${esc(x.full_name)}</button><span class="cx-title">${esc(x.title)}</span>${x.mine ? '<span class="badge">yours</span>' : ''}<span class="badge">${x.matched}/${used.length} skills</span></div>
+    <div class="cx-skills">${(x.matched_skills || []).map(chip).join('')}</div>
+    <div class="cx-foot"><span class="muted small">${esc(cWhere(x) || 'Location not set')} · ${esc(x.work_auth || 'Auth not set')} · ${x.rate_usd_hr != null ? '$' + esc(x.rate_usd_hr) + '/hr' : 'Rate not set'} · Available: ${x.available_from ? esc(cDate(x.available_from)) : 'Now'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button></div></div></div>`).join('');
+  $('#cm-results').innerHTML = `<p class="muted small">Matched on: ${used.map(esc).join(', ')}</p>${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div></div>` : '<div class="panel"><p>No available consultants match these skills and filters.</p></div>'}`;
 }
 
 async function cRunSearch(page) {
@@ -830,6 +855,7 @@ document.addEventListener('click', (ev) => {
   if (c === 'hot-make') return busy(t, cHotMake);
   if (c === 'view') { window.open('#/consultants/' + id, '_blank'); return; }
   if (c === 'search') return busy(t, () => cRunSearch(1));
+  if (c === 'match') return busy(t, cRunMatch);
   if (c === 'page') return busy(t, () => cRunSearch(+t.dataset.p));
   if (c === 'save') return busy(t, async () => {
     const res = await api(id ? '/consultants/' + id : '/consultants', { method: id ? 'PUT' : 'POST', body: cCollect() });
