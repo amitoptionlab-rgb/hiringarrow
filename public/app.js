@@ -616,7 +616,7 @@ async function cRunSearch(page) {
         <div class="cx-col"><div>${x.relocate ? 'Willing to relocate' : 'Not willing to relocate'}</div><div><span class="muted">Remote:</span> ${x.remote_ok ? 'Yes' : 'No'}</div><div><span class="muted">Available:</span> ${x.available_from ? esc(cDate(x.available_from)) : 'Now'}</div></div>
       </div></div>
     <div class="cx-skills">${sk.length ? sk.slice(0, 12).map(chip).join('') : '<span class="muted small">No skills listed</span>'}</div>${more}
-    <div class="cx-foot"><span class="muted small">${x.mine ? '' : 'Contact hidden'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button><input type="checkbox" class="csel" aria-label="Select ${esc(x.full_name)}"></div></div></div>`;
+    <div class="cx-foot"><span class="muted small">${x.mine ? '' : 'Contact hidden'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button></div></div></div>`;
   }).join('');
   $('#cs-results').innerHTML = `${note}${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div>
     <div class="actions" style="margin-top:10px;align-items:center"><span class="muted small">${num(r.total)} found · page ${r.page} of ${pages}</span>
