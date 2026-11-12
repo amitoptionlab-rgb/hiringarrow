@@ -597,7 +597,7 @@ function cDrawMatch() {
     <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
     <label>State<input id="cm-state" placeholder="TX" maxlength="60"></label>
     <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label></div>
-    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-results"></div><div id="cm-bool"></div>`;
+    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-bool"></div><div id="cm-results"></div>`;
 }
 
 async function cRunMatch() {
