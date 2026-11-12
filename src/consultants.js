@@ -154,7 +154,7 @@ consultants.post('/match', searchLimiter, async (req, res) => {
        (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[]))::int AS matched,
        (SELECT array_agg(s) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) AS matched_skills
      FROM consultants c WHERE ${where} ORDER BY matched DESC, c.updated_at DESC LIMIT 25`, p);
-  res.json({ skills_used: sk, rows: rows.map(view) });
+  res.json({ skills_used: sk, skill_aliases: Object.fromEntries(sk.map((s) => [s, Object.hasOwn(SKILLS, s) ? SKILLS[s] : []])), rows: rows.map(view) });
 });
 
 // ---------- my profiles ----------

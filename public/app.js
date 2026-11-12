@@ -597,7 +597,7 @@ function cDrawMatch() {
     <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
     <label>State<input id="cm-state" placeholder="TX" maxlength="60"></label>
     <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label></div>
-    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-results"></div>`;
+    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-results"></div><div id="cm-bool"></div>`;
 }
 
 async function cRunMatch() {
@@ -608,12 +608,53 @@ async function cRunMatch() {
   if (!body.jd && !body.skills) throw new Error('Paste a JD or enter skills first.');
   const r = await api('/consultants/match', { method: 'POST', body });
   const used = r.skills_used || [];
+  CS.match = r; cBoolDraw();
   const chip = (s) => `<span class="cx-sk hit" title="${esc(s)}">${esc(s)}</span>`;
   const rows = r.rows.map((x) => `<div class="ccard cx">
     <div class="cx-head"><button type="button" class="cname" data-c="view" data-id="${x.id}">${esc(x.full_name)}</button><span class="cx-title">${esc(x.title)}</span>${x.mine ? '<span class="badge">yours</span>' : ''}<span class="badge">${x.matched}/${used.length} skills</span></div>
     <div class="cx-skills">${(x.matched_skills || []).map(chip).join('')}</div>
     <div class="cx-foot"><span class="muted small">${esc(cWhere(x) || 'Location not set')} · ${esc(x.work_auth || 'Auth not set')} · ${x.rate_usd_hr != null ? '$' + esc(x.rate_usd_hr) + '/hr' : 'Rate not set'} · Available: ${x.available_from ? esc(cDate(x.available_from)) : 'Now'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button></div></div></div>`).join('');
   $('#cm-results').innerHTML = `${used.length ? `<p class="muted small">Skills found: ${used.map(esc).join(', ')}</p>` : ''}${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div></div>` : `<div class="panel"><p>${used.length ? 'No available consultants match these skills and filters.' : 'No known skills found in this JD. Type them in the Skills field.'}</p></div>`}`;
+}
+
+function cBq(t) { return /[^a-z0-9]/i.test(t) ? '"' + t + '"' : t; }
+
+function cBoolDraw() {
+  const box = $('#cm-bool'); if (!box) return;
+  const used = CS.match?.skills_used || [];
+  if (!used.length) { box.innerHTML = ''; return; }
+  const area = ([k, l]) => `<label>${l}<textarea id="cb-${k}" rows="2" readonly></textarea></label><div class="actions" style="margin:4px 0 10px"><button type="button" class="ghost small" data-c="bcopy" data-k="${k}">Copy</button></div>`;
+  box.innerHTML = `<div class="panel"><b>Boolean string</b> <span class="muted small">Tick the must-have skills (AND). The rest go into one OR group.</span>
+    <div class="actions" style="margin:8px 0;align-items:center">${used.map((s, i) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" class="bmust" data-c="bool" data-s="${esc(s)}"${i < 3 ? ' checked' : ''}> ${esc(s)}</label>`).join('')}</div>
+    <label>Job titles (optional, comma separated)<input id="cb-titles" placeholder="data analyst, analytics consultant"></label>
+    <div class="actions" style="margin:8px 0"><button type="button" class="ghost small" data-c="bool">Rebuild</button></div>
+    ${[['short', 'Short (free LinkedIn search: must-have skills only)'], ['full', 'Full (Recruiter / Sales Navigator)'], ['xray', 'Google X-ray']].map(area).join('')}</div>`;
+  cBoolBuild();
+}
+
+function cBoolBuild() {
+  const r = CS.match; if (!r || !$('#cb-full')) return;
+  const al = r.skill_aliases || {};
+  const grp = (s) => { const t = [s, ...(al[s] || [])].map(cBq); return t.length > 1 ? '(' + t.join(' OR ') + ')' : t[0]; };
+  const must = [...document.querySelectorAll('.bmust:checked')].map((b) => b.dataset.s);
+  const rest = (r.skills_used || []).filter((s) => !must.includes(s));
+  const titles = ($('#cb-titles')?.value || '').split(/[,;|]/).map((x) => x.trim()).filter(Boolean);
+  const st = ($('#cm-state')?.value || '').trim();
+  const parts = [];
+  if (titles.length) parts.push('(' + titles.map(cBq).join(' OR ') + ')');
+  must.forEach((s) => parts.push(grp(s)));
+  if (rest.length) parts.push('(' + rest.map(grp).join(' OR ') + ')');
+  if (st) parts.push(cBq(st));
+  const full = parts.join(' AND ');
+  $('#cb-full').value = full;
+  $('#cb-short').value = must.map(cBq).join(' AND ');
+  $('#cb-xray').value = full ? 'site:linkedin.com/in ' + full + ' -recruiter -staffing' : '';
+}
+
+async function cBoolCopy(k) {
+  const el = $('#cb-' + k); if (!el || !el.value) return;
+  try { await navigator.clipboard.writeText(el.value); } catch { el.select(); document.execCommand('copy'); }
+  toast('Copied.');
 }
 
 async function cRunSearch(page) {
@@ -857,6 +898,8 @@ document.addEventListener('click', (ev) => {
   if (c === 'view') { window.open('#/consultants/' + id, '_blank'); return; }
   if (c === 'search') return busy(t, () => cRunSearch(1));
   if (c === 'match') return busy(t, cRunMatch);
+  if (c === 'bool') return cBoolBuild();
+  if (c === 'bcopy') return busy(t, () => cBoolCopy(t.dataset.k));
   if (c === 'page') return busy(t, () => cRunSearch(+t.dataset.p));
   if (c === 'save') return busy(t, async () => {
     const res = await api(id ? '/consultants/' + id : '/consultants', { method: id ? 'PUT' : 'POST', body: cCollect() });
