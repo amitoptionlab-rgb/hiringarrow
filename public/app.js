@@ -678,9 +678,16 @@ function cCollect() {
     contact_email: g('contact_email'), contact_phone: g('contact_phone') };
 }
 
+const cBC = 'BroadcastChannel' in window ? new BroadcastChannel('ha-consultants') : null;
+if (cBC) cBC.onmessage = (e) => {
+  if (location.hash === '#/consultants/' + e.data?.id) consultantDetail(e.data.id).catch(() => {});
+};
+
 async function cRefreshMine(id) {
   CS.mine = (await api('/consultants/mine')).rows;
   const box = $('#cf-rbox'); if (box && id) box.innerHTML = cResumeBlock(id);
+  if (id) cBC?.postMessage({ id });
+  if (CS.tab === 'mine' && $('#cs-body')) cDrawMine();
 }
 
 async function consultantDetail(id) {
