@@ -596,15 +596,16 @@ function cDrawMatch() {
     <label>Skills (optional, overrides JD)<input id="cm-skills" placeholder="java, spring boot, aws"></label>
     <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
     <label>State<input id="cm-state" placeholder="TX" maxlength="60"></label>
-    <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label></div>
-    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-bool"></div><div id="cm-results"></div>`;
+    <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label><label>City<input id="cm-city" placeholder="Los Angeles" maxlength="60"></label><label>Min experience (yrs)<input id="cm-exp" type="number" min="0" max="60"></label><label>Engagement<select id="cm-eng"><option value="">Any</option><option>C2C</option><option>W2</option><option>1099</option></select></label><label>Available by<input id="cm-avail" type="date"></label></div>
+    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-remote"> Remote OK only</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-bool"></div><div id="cm-results"></div>`;
 }
 
 async function cRunMatch() {
   const v = (s) => ($(s)?.value || '').trim();
   const body = {};
-  [['jd', '#cm-jd'], ['skills', '#cm-skills'], ['work_auth', '#cm-auth'], ['state', '#cm-state'], ['max_rate', '#cm-rate']].forEach(([k, s]) => { if (v(s)) body[k] = v(s); });
+  [['jd', '#cm-jd'], ['skills', '#cm-skills'], ['work_auth', '#cm-auth'], ['state', '#cm-state'], ['max_rate', '#cm-rate'], ['city', '#cm-city'], ['min_exp', '#cm-exp'], ['engagement', '#cm-eng'], ['available_by', '#cm-avail']].forEach(([k, s]) => { if (v(s)) body[k] = v(s); });
   if ($('#cm-onsite')?.checked) body.onsite = true;
+  if ($('#cm-remote')?.checked) body.remote = true;
   if (!body.jd && !body.skills) throw new Error('Paste a JD or enter skills first.');
   const r = await api('/consultants/match', { method: 'POST', body });
   const used = r.skills_used || [];
@@ -644,7 +645,7 @@ function cBoolBuild() {
   if (titles.length) parts.push('(' + titles.map(cBq).join(' OR ') + ')');
   must.forEach((s) => parts.push(grp(s)));
   if (rest.length) parts.push('(' + rest.map(grp).join(' OR ') + ')');
-  if (st) parts.push(cBq(st));
+  const loc = ($('#cm-city')?.value || '').trim() || st; if (loc) parts.push(cBq(loc));
   const full = parts.join(' AND ');
   $('#cb-full').value = full;
   $('#cb-short').value = must.map(cBq).join(' AND ');

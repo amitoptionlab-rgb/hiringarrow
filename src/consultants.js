@@ -161,6 +161,13 @@ consultants.post('/match', searchLimiter, async (req, res) => {
   if (st) where += bool(b.onsite)
     ? ` AND lower(c.state) = ${add(st.toLowerCase())}`
     : ` AND (lower(c.state) = ${add(st.toLowerCase())} OR c.remote_ok OR c.relocate)`;
+  const cn = txt(b.city, 60);
+  if (cn) { const cp = add(cn.toLowerCase()); where += bool(b.onsite) ? ` AND lower(c.city) = ${cp}` : ` AND (lower(c.city) = ${cp} OR c.remote_ok OR c.relocate)`; }
+  const me = num(b.min_exp, 0, 60, 'min_exp');
+  if (me !== null) where += ` AND c.experience_yrs >= ${add(me)}`;
+  if (bool(b.remote)) where += ' AND c.remote_ok';
+  const av = txt(b.available_by, 10);
+  if (av && okDate(av)) where += ` AND (c.available_from IS NULL OR c.available_from <= ${add(av)}::date)`;
   const mr = num(b.max_rate, 0, 1000, 'max_rate');
   if (mr !== null) where += ` AND c.rate_usd_hr <= ${add(mr)}`;
 
