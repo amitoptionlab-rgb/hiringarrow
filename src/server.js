@@ -22,7 +22,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
-      frameSrc: ["'self'"],
+      frameSrc: ["'self'", 'blob:'],
       objectSrc: ["'none'"],
       formAction: ["'self'"],
       upgradeInsecureRequests: null,   // would break plain-http local dev
