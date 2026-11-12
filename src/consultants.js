@@ -190,12 +190,23 @@ consultants.post('/match', searchLimiter, async (req, res) => {
   if (av && okDate(av)) where += ` AND (c.available_from IS NULL OR c.available_from <= ${add(av)}::date)`;
   const mr = num(b.max_rate, 0, 1000, 'max_rate');
   if (mr !== null) where += ` AND c.rate_usd_hr <= ${add(mr)}`;
+  if (bool(b.relocate)) where += ' AND c.relocate';
+  if (bool(b.has_resume)) where += ' AND (c.resume_text IS NOT NULL OR EXISTS (SELECT 1 FROM consultant_resumes r WHERE r.consultant_id = c.id))';
+  const mm = num(b.min_match, 0, 100, 'min_match');
+  if (mm !== null && mm > 0) where += ` AND (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) * 100 >= ${add(mm)}::numeric * ${sk.length}`;
+  const SORTS = {
+    best: 'matched DESC, c.updated_at DESC',
+    rate_low: 'c.rate_usd_hr ASC NULLS LAST, matched DESC, c.updated_at DESC',
+    exp_high: 'c.experience_yrs DESC NULLS LAST, matched DESC, c.updated_at DESC',
+    available_soon: 'c.available_from ASC NULLS FIRST, matched DESC, c.updated_at DESC',
+  };
+  const orderBy = Object.hasOwn(SORTS, b.sort) ? SORTS[b.sort] : SORTS.best;
 
   const { rows } = await q(
     `SELECT ${PUBLIC_COLS},
        (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[]))::int AS matched,
        (SELECT array_agg(s) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) AS matched_skills
-     FROM consultants c WHERE ${where} ORDER BY matched DESC, c.updated_at DESC LIMIT 25`, p);
+     FROM consultants c WHERE ${where} ORDER BY ${orderBy} LIMIT 25`, p);
   res.json({ skills_used: sk, titles_found: foundTitles(jd), skill_aliases: Object.fromEntries(sk.map((s) => [s, Object.hasOwn(SKILLS, s) ? SKILLS[s] : []])), rows: rows.map(view) });
 });
 
