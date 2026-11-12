@@ -715,7 +715,7 @@ async function consultantDetail(id) {
       <details class="panel cd-sec" open><summary>Personal Details</summary><div class="cd-grid">${personal}</div></details>
       <details class="panel cd-sec" open><summary>Skills (${sk.length})</summary><div class="cx-skills" style="margin-top:12px">${sk.length ? sk.map((s) => `<span class="cx-sk" title="${esc(s)}">${esc(s)}</span>`).join('') : '<span class="muted small">No skills listed</span>'}</div></details>
       <details class="panel cd-sec" open><summary>Resume</summary>${hasFile ? '<div id="cd-prev" class="cd-prev"><p class="muted small">Loading resume...</p></div>' : showText ? (text ? `<div class="cd-text">${esc(text)}</div>` : '<p class="muted small">No resume on this profile.</p>') : '<p class="muted small">Resume is not shown to other companies.</p>'}</details>
-      <div class="cd-bar"><a class="cd-btn" href="#/consultants">Previous</a>${hasFile ? `<button type="button" class="ghost" data-c="r-down" data-id="${id}">Download Resume</button>` : ''}</div>`;
+      <div class="cd-bar"><a class="cd-btn" href="#/consultants">Previous</a>${hasFile ? `<button type="button" class="ghost" data-c="r-full">Full screen</button>` : ''}${hasFile ? `<button type="button" class="ghost" data-c="r-down" data-id="${id}">Download Resume</button>` : ''}</div>`;
     cLoadPreview(id);
   } catch (e) {
     if (location.hash !== '#/consultants/' + id) return;
@@ -779,6 +779,7 @@ document.addEventListener('click', (ev) => {
     toast(r.text_extracted ? 'Resume uploaded and indexed for search.' : 'Resume saved, but no text could be read (scanned PDF?), so it is not searchable.');
     await cRefreshMine(id);
   });
+  if (c === 'r-full') { const el = $('#cd-prev'); if (el && el.requestFullscreen) el.requestFullscreen().catch(() => toast('Full screen not available.')); else toast('Full screen not available.'); return; }
   if (c === 'r-down') return busy(t, () => cDownload(id));
   if (c === 'r-del') { if (!confirm('Remove this resume?')) return; return busy(t, async () => { await api(`/consultants/${id}/resume`, { method: 'DELETE' }); toast('Resume removed.'); await cRefreshMine(id); }); }
 });
