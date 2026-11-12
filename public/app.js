@@ -624,10 +624,70 @@ async function cRunSearch(page) {
 }
 
 function cDrawMine() {
-  $('#cs-body').innerHTML = CS.mine.length ? `<div class="panel"><div class="tablewrap"><table><thead><tr><th>Consultant</th><th>Skills</th><th>Status</th><th>Visibility</th><th>Resume</th><th></th></tr></thead><tbody>
-    ${CS.mine.map((x) => `<tr><td><b>${esc(x.full_name)}</b><br><span class="muted small">${esc(x.title)}</span></td><td>${cChips(x.skills)}</td><td>${esc(x.status)}</td><td>${esc(x.visibility)}</td><td>${x.has_file ? 'Yes' : (x.has_resume ? 'Text only' : '–')}</td>
+  $('#cs-body').innerHTML = CS.mine.length ? `<div class="panel"><div class="actions" style="padding:12px 12px 0"><button type="button" id="hl-btn" data-c="hotlist" disabled>Send hotlist</button> <span class="muted small" id="hl-n">Select consultants to include</span></div><div class="tablewrap"><table><thead><tr><th></th><th>Consultant</th><th>Skills</th><th>Status</th><th>Visibility</th><th>Resume</th><th></th></tr></thead><tbody>
+    ${CS.mine.map((x) => `<tr><td><input type="checkbox" class="hsel" data-c="hsel" data-id="${x.id}" aria-label="Select for hotlist"></td><td><b>${esc(x.full_name)}</b><br><span class="muted small">${esc(x.title)}</span></td><td>${cChips(x.skills)}</td><td>${esc(x.status)}</td><td>${esc(x.visibility)}</td><td>${x.has_file ? 'Yes' : (x.has_resume ? 'Text only' : '–')}</td>
     <td><div class="actions"><button type="button" class="ghost small" data-c="edit" data-id="${x.id}">Edit</button><button type="button" class="ghost small" data-c="del" data-id="${x.id}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></div>`
     : '<div class="panel"><p>No consultants yet. Click "Add consultant", save, and then upload a resume.</p></div>';
+}
+
+function cHotIds() { return [...document.querySelectorAll('.hsel:checked')].map((b) => b.dataset.id); }
+
+function cHotCount() {
+  const n = cHotIds().length, btn = $('#hl-btn'), lab = $('#hl-n');
+  if (btn) btn.disabled = n === 0;
+  if (lab) lab.textContent = n ? n + ' selected' : 'Select consultants to include';
+}
+
+async function cHotOpen() {
+  const ids = cHotIds();
+  if (!ids.length) return;
+  const got = await api('/lists');
+  const lists = Array.isArray(got) ? got : [];
+  CS.hotIds = ids;
+  modal(`<h2>Send hotlist</h2>
+    <p class="muted small">${ids.length} consultant(s). This creates a draft campaign; you review, test and send it from the campaign editor. Contact email and phone are never included.</p>
+    <label>Subject<input id="hl-subject" value="${esc('Hotlist: ' + ids.length + ' available consultants')}"></label>
+    <label>From name<input id="hl-fname" value="${esc(me.name || '')}"></label>
+    <label>From email<input id="hl-femail" value="${esc(me.email || '')}" placeholder="you@your-verified-domain.com"></label>
+    <label>Vendor list<select id="hl-list"><option value="">Choose later in the editor</option>${lists.map((l) => `<option value="${esc(l.id)}">${esc(l.name)} (${esc(l.subscribers)})</option>`).join('')}</select></label>
+    <label><input type="checkbox" id="hl-rate"> Show hourly rate</label>
+    <div class="actions" style="margin-top:12px"><button type="button" class="ghost" data-c="close">Cancel</button><button type="button" data-c="hot-make">Create draft</button></div>`);
+}
+
+async function cHotMake() {
+  const ids = (CS.hotIds || []).map(String);
+  const rows = CS.mine.filter((x) => ids.includes(String(x.id)));
+  if (!rows.length) throw new Error('Nothing selected.');
+  const subject = $('#hl-subject').value.trim();
+  const from_name = $('#hl-fname').value.trim();
+  const from_email = $('#hl-femail').value.trim();
+  const list_id = $('#hl-list').value || null;
+  const showRate = $('#hl-rate').checked;
+  if (!subject) throw new Error('Add a subject line.');
+  if (!from_name) throw new Error('Add a From name.');
+  if (!from_email) throw new Error('Add a From email on your verified domain.');
+  const th = 'padding:8px 10px;border:1px solid #d9d9d9;background:#f4f4f4;text-align:left;font:600 13px Arial,sans-serif';
+  const td = 'padding:8px 10px;border:1px solid #d9d9d9;vertical-align:top;font:13px Arial,sans-serif';
+  const head = ['Consultant', 'Skills', 'Exp', 'Work auth', 'Location', 'Available'].concat(showRate ? ['Rate'] : []);
+  const tr = rows.map((x) => {
+    const cells = [
+      '<b>' + esc(x.full_name) + '</b><br>' + esc(x.title || ''),
+      esc((x.skills || []).slice(0, 8).join(', ')),
+      x.experience_yrs != null ? esc(x.experience_yrs) + ' yrs' : '–',
+      esc(x.work_auth || '–'),
+      esc(cWhere(x) || '–'),
+      x.available_from ? esc(cDate(x.available_from)) : '–',
+    ].concat(showRate ? [x.rate_usd_hr != null ? '$' + esc(x.rate_usd_hr) + '/hr' : '–'] : []);
+    return '<tr>' + cells.map((c) => '<td style="' + td + '">' + c + '</td>').join('') + '</tr>';
+  }).join('');
+  const html = '<div style="font:14px/1.5 Arial,sans-serif;color:#111"><p>Hi,</p><p>Consultants available now:</p>'
+    + '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr>'
+    + head.map((h) => '<th style="' + th + '">' + h + '</th>').join('') + '</tr></thead><tbody>' + tr + '</tbody></table>'
+    + '<p>Reply to this email for full profiles and resumes.</p></div>';
+  const name = 'Hotlist ' + new Date().toLocaleDateString('en-CA');
+  const res = await api('/campaigns', { method: 'POST', body: { name, subject, from_name, from_email, html, list_id } });
+  closeModal(); toast('Draft campaign created.');
+  location.hash = '#/campaigns/' + res.id;
 }
 
 async function cView(id) {
@@ -765,6 +825,9 @@ document.addEventListener('click', (ev) => {
   if (c === 'tab') { CS.tab = t.dataset.t; return busy(null, consultantsPage); }
   if (c === 'new') return cOpenForm(null);
   if (c === 'edit') return cOpenForm(id);
+  if (c === 'hsel') return cHotCount();
+  if (c === 'hotlist') return busy(t, cHotOpen);
+  if (c === 'hot-make') return busy(t, cHotMake);
   if (c === 'view') { window.open('#/consultants/' + id, '_blank'); return; }
   if (c === 'search') return busy(t, () => cRunSearch(1));
   if (c === 'page') return busy(t, () => cRunSearch(+t.dataset.p));
