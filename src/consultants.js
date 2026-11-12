@@ -90,6 +90,42 @@ consultants.get('/search', searchLimiter, async (req, res) => {
   res.json({ rows: rows.map(({ score: _s, ...r }) => view(r)), total, page, size, searched_others: others });
 });
 
+// ---------- JD match: rank available profiles by how many JD skills they cover ----------
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+consultants.post('/match', searchLimiter, async (req, res) => {
+  const others = await canSeeOthers(req);
+  const p = [tid(req)];
+  const add = (v) => { p.push(v); return `$${p.length}`; };
+  const base = others ? `(c.tenant_id = $1 OR c.visibility = 'public')` : 'c.tenant_id = $1';
+  const b = req.body || {};
+
+  let sk = csv(b.skills, 30, 40);
+  const jd = String(b.jd || '').slice(0, 20000).toLowerCase();
+  if (!sk.length && jd) {
+    // No AI: pick JD words that already exist as skills on visible, available profiles.
+    const { rows } = await q(`SELECT DISTINCT s FROM consultants c, unnest(c.skills) s WHERE ${base} AND c.status = 'available' AND length(s) > 1 LIMIT 5000`, p);
+    sk = rows.map((r) => r.s).filter((s) => new RegExp(`(^|[^a-z0-9+#.])${reEsc(s)}($|[^a-z0-9+#.])`).test(jd)).slice(0, 30);
+  }
+  if (!sk.length) bad('No known skills found. Paste a JD with skills, or type skills manually.');
+
+  const sn = add(sk);
+  let where = `${base} AND c.status = 'available' AND c.skills && ${sn}::text[]`;
+  const wa = csv(b.work_auth, 9, 10).map(authOf).filter(Boolean);
+  if (wa.length) where += ` AND c.work_auth = ANY(${add(wa)}::text[])`;
+  const en = csv(b.engagement, 3, 6).map((x) => x.toUpperCase()).filter((x) => ENGAGE.includes(x));
+  if (en.length) where += ` AND c.engagement && ${add(en)}::text[]`;
+  const st = txt(b.state, 60);
+  if (st) where += ` AND (lower(c.state) = ${add(st.toLowerCase())} OR c.remote_ok OR c.relocate)`;
+  const mr = num(b.max_rate, 0, 1000, 'max_rate');
+  if (mr !== null) where += ` AND c.rate_usd_hr <= ${add(mr)}`;
+
+  const { rows } = await q(
+    `SELECT ${PUBLIC_COLS},
+       (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[]))::int AS matched,
+       (SELECT array_agg(s) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) AS matched_skills
+     FROM consultants c WHERE ${where} ORDER BY matched DESC, c.updated_at DESC LIMIT 25`, p);
+  res.json({ skills_used: sk, rows: rows.map(view) });
+});
 // ---------- my profiles ----------
 consultants.get('/mine', async (req, res) => {
   const page = Math.max(1, Math.floor(+req.query.page || 1)), size = 50;
