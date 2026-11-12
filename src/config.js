@@ -20,6 +20,7 @@ export const config = {
   sendRatePerSec: +e.SEND_RATE_PER_SEC || 10,
   requireDomainVerified: e.REQUIRE_DOMAIN_VERIFIED === 'true',
   verifyMx: e.VERIFY_MX === 'true',
+  blockFreeEmail: e.BLOCK_FREE_EMAIL !== 'false',   // signups need a company email; set BLOCK_FREE_EMAIL=false to allow free emails
   requireEmailVerify: e.REQUIRE_EMAIL_VERIFY === 'true',   // new signups must confirm their email before the first login
   brevo: { webhookSecret: e.BREVO_WEBHOOK_SECRET || '' },       // protects POST /webhooks/brevo
   snsVerify: e.SNS_VERIFY !== 'false',
