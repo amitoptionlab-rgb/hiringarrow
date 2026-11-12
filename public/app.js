@@ -596,7 +596,7 @@ function cDrawMatch() {
     <label>Skills (optional, overrides JD)<input id="cm-skills" placeholder="java, spring boot, aws"></label>
     <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
     <label>State<input id="cm-state" placeholder="TX" maxlength="60"></label>
-    <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label><label>City<input id="cm-city" placeholder="Los Angeles" maxlength="60"></label><label>Min experience (yrs)<input id="cm-exp" type="number" min="0" max="60"></label><label>Engagement<select id="cm-eng"><option value="">Any</option><option>C2C</option><option>W2</option><option>1099</option></select></label><label>Available by<input id="cm-avail" type="date"></label></div>
+    <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label><label>ZIP<input id="cm-zip" placeholder="90210" maxlength="10" inputmode="numeric"></label><label>City<input id="cm-city" placeholder="Los Angeles" maxlength="60"></label><label>Min experience (yrs)<input id="cm-exp" type="number" min="0" max="60"></label><label>Engagement<select id="cm-eng"><option value="">Any</option><option>C2C</option><option>W2</option><option>1099</option></select></label><label>Available by<input id="cm-avail" type="date"></label></div>
     <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-remote"> Remote OK only</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-bool"></div><div id="cm-results"></div>`;
 }
 
@@ -1057,3 +1057,20 @@ document.addEventListener('submit', async (ev) => {
 window.addEventListener('beforeunload', (e) => { if ((ed.dirty && $('#cform')) || (jr.dirty && $('#jform'))) { e.preventDefault(); e.returnValue = ''; } });
 
 render();
+
+// JD match: ZIP -> City/State autofill (US)
+document.addEventListener('input', async (e) => {
+  if (!e.target || e.target.id !== 'cm-zip') return;
+  const z = e.target.value.trim().slice(0, 5);
+  if (!/^\d{5}$/.test(z)) return;
+  try {
+    const r = await fetch('https://api.zippopotam.us/us/' + z);
+    if (!r.ok) return;
+    const d = await r.json();
+    const p = d.places && d.places[0];
+    if (!p || e.target.value.trim().slice(0, 5) !== z) return;
+    const c = document.querySelector('#cm-city'), st = document.querySelector('#cm-state');
+    if (c) c.value = p['place name'];
+    if (st) st.value = p['state abbreviation'];
+  } catch (_) {}
+});
