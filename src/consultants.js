@@ -113,9 +113,23 @@ const SKILLS = {
   'testng': [], 'postman': [], 'manual testing': [], 'automation testing': [], 'performance testing': [], 'jmeter': [],
   'ios': [], 'android': [], 'flutter': [], 'react native': [], 'hl7': [], 'fhir': [], 'cerner': [], 'tibco': [], 'websphere': [], 'weblogic': [],
 };
+Object.assign(SKILLS, {
+  'requirements gathering': ['requirement gathering', 'requirements analysis', 'requirements elicitation'],
+  'user stories': [], 'acceptance criteria': [], 'backlog management': ['product backlog'], 'uat': ['user acceptance testing'],
+  'business process analysis': ['business process', 'process mapping'], 'stakeholder management': [], 'gap analysis': [],
+  'data mapping': [], 'data quality': [], 'data analysis': [], 'data visualization': ['data visualisation'],
+  'power platform': [], 'data lakehouse': ['lakehouse'], 'confluence': [], 'visio': [], 'bpmn': [], 'sdlc': [], 'kanban': [],
+  'project management': [], 'ecommerce': ['e-commerce'], 'rpa': [], 'uipath': [], 'api testing': [], 'wireframing': [],
+});
 const SKILL_ALIAS = new Map(Object.entries(SKILLS).flatMap(([k, al]) => al.map((a) => [a, k])));
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const hasTerm = (text, t) => new RegExp(`(?<![a-z0-9+#.])${reEsc(t)}(?![a-z0-9+#])`).test(text);
+
+const TITLES = ['business analyst', 'product owner', 'data analyst', 'data scientist', 'data engineer', 'data architect', 'software engineer',
+  'java developer', 'python developer', 'full stack developer', 'devops engineer', 'cloud engineer', 'qa engineer', 'project manager',
+  'program manager', 'scrum master', 'solutions architect', 'systems analyst', 'analytics consultant', 'bi developer', 'etl developer',
+  'salesforce developer', 'tableau developer', 'power bi developer', 'technical lead'];
+const foundTitles = (jd) => TITLES.filter((t) => hasTerm(jd, t)).slice(0, 4);
 
 consultants.post('/match', searchLimiter, async (req, res) => {
   const others = await canSeeOthers(req);
@@ -131,7 +145,8 @@ consultants.post('/match', searchLimiter, async (req, res) => {
     const found = new Set(Object.entries(SKILLS).filter(([k, al]) => [k, ...al].some((t) => hasTerm(jd, t))).map(([k]) => k));
     const { rows } = await q(`SELECT DISTINCT s FROM consultants c, unnest(c.skills) s WHERE ${base} AND c.status = 'available' AND length(s) > 1 LIMIT 5000`, p);
     rows.forEach((r) => { if (hasTerm(jd, r.s)) found.add(SKILL_ALIAS.get(r.s) || r.s); });
-    sk = [...found];
+    const pos = (k) => Math.min(...[k, ...(SKILLS[k] || [])].map((t) => { const i = jd.indexOf(t); return i < 0 ? 1e9 : i; }));
+    sk = [...found].sort((x, y) => pos(x) - pos(y));
   }
   sk = [...new Set(sk.map((s) => SKILL_ALIAS.get(s) || s))].slice(0, 30);
   if (!sk.length) return res.json({ skills_used: [], rows: [] });
@@ -154,7 +169,7 @@ consultants.post('/match', searchLimiter, async (req, res) => {
        (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[]))::int AS matched,
        (SELECT array_agg(s) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) AS matched_skills
      FROM consultants c WHERE ${where} ORDER BY matched DESC, c.updated_at DESC LIMIT 25`, p);
-  res.json({ skills_used: sk, skill_aliases: Object.fromEntries(sk.map((s) => [s, Object.hasOwn(SKILLS, s) ? SKILLS[s] : []])), rows: rows.map(view) });
+  res.json({ skills_used: sk, titles_found: foundTitles(jd), skill_aliases: Object.fromEntries(sk.map((s) => [s, Object.hasOwn(SKILLS, s) ? SKILLS[s] : []])), rows: rows.map(view) });
 });
 
 // ---------- my profiles ----------

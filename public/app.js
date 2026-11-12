@@ -625,8 +625,8 @@ function cBoolDraw() {
   if (!used.length) { box.innerHTML = ''; return; }
   const area = ([k, l]) => `<label>${l}<textarea id="cb-${k}" rows="2" readonly></textarea></label><div class="actions" style="margin:4px 0 10px"><button type="button" class="ghost small" data-c="bcopy" data-k="${k}">Copy</button></div>`;
   box.innerHTML = `<div class="panel"><b>Boolean string</b> <span class="muted small">Tick the must-have skills (AND). The rest go into one OR group.</span>
-    <div class="actions" style="margin:8px 0;align-items:center">${used.map((s, i) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" class="bmust" data-c="bool" data-s="${esc(s)}"${i < 3 ? ' checked' : ''}> ${esc(s)}</label>`).join('')}</div>
-    <label>Job titles (optional, comma separated)<input id="cb-titles" placeholder="data analyst, analytics consultant"></label>
+    <div class="actions" style="margin:8px 0;align-items:center">${used.map((s, i) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:0;white-space:nowrap"><input type="checkbox" class="bmust" data-c="bool" data-s="${esc(s)}"${i < 3 ? ' checked' : ''}> ${esc(s)}</label>`).join('')}</div>
+    <label>Job titles (optional, comma separated)<input id="cb-titles" value="${esc((CS.match?.titles_found || []).join(', '))}" placeholder="data analyst, analytics consultant"></label>
     <div class="actions" style="margin:8px 0"><button type="button" class="ghost small" data-c="bool">Rebuild</button></div>
     ${[['short', 'Short (free LinkedIn search: must-have skills only)'], ['full', 'Full (Recruiter / Sales Navigator)'], ['xray', 'Google X-ray']].map(area).join('')}</div>`;
   cBoolBuild();
