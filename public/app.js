@@ -1064,7 +1064,7 @@ document.addEventListener('input', async (e) => {
   const z = e.target.value.trim().slice(0, 5);
   if (!/^\d{5}$/.test(z)) return;
   try {
-    const r = await fetch('/api/consultants/zip/' + z, { credentials: 'same-origin' });
+    const r = await fetch('/api/consultants/zip/' + z, { headers: { Authorization: 'Bearer ' + token } });
     if (!r.ok) return;
     const d = await r.json();
     const p = d;
