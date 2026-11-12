@@ -650,7 +650,7 @@ async function cHotOpen() {
     <label>From name<input id="hl-fname" value="${esc(me.name || '')}"></label>
     <label>From email<input id="hl-femail" value="${esc(me.email || '')}" placeholder="you@your-verified-domain.com"></label>
     <label>Vendor list<select id="hl-list"><option value="">Choose later in the editor</option>${lists.map((l) => `<option value="${esc(l.id)}">${esc(l.name)} (${esc(l.subscribers)})</option>`).join('')}</select></label>
-    <label><input type="checkbox" id="hl-rate"> Show hourly rate</label>
+    <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="hl-rate" style="width:auto;margin:0"> Show hourly rate</label>
     <div class="actions" style="margin-top:12px"><button type="button" class="ghost" data-c="close">Cancel</button><button type="button" data-c="hot-make">Create draft</button></div>`);
 }
 
