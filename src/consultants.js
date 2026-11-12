@@ -61,6 +61,26 @@ const PUBLIC_COLS = `c.id, c.full_name, c.title, c.skills, c.experience_yrs, c.w
 const view = (r) => (r.mine ? r : { ...r, full_name: maskName(r.full_name) });
 
 // ---------- search (own profiles + other tenants' public, available ones) ----------
+const zipCache = new Map();
+consultants.get('/zip/:zip', searchLimiter, async (req, res) => {
+  const z = String(req.params.zip || '').trim();
+  if (!/^\d{5}$/.test(z)) return res.status(400).json({ error: 'ZIP must be 5 digits.' });
+  if (zipCache.has(z)) return res.json(zipCache.get(z));
+  try {
+    const r = await fetch('https://api.zippopotam.us/us/' + z, { signal: AbortSignal.timeout(4000) });
+    if (r.status === 404) return res.status(404).json({ error: 'ZIP not found.' });
+    if (!r.ok) return res.status(502).json({ error: 'ZIP lookup failed.' });
+    const d = await r.json();
+    const p = d.places && d.places[0];
+    if (!p) return res.status(404).json({ error: 'ZIP not found.' });
+    const out = { city: p['place name'], state: p['state abbreviation'] };
+    zipCache.set(z, out);
+    return res.json(out);
+  } catch (_) {
+    return res.status(502).json({ error: 'ZIP lookup failed.' });
+  }
+});
+
 consultants.get('/search', searchLimiter, async (req, res) => {
   const others = await canSeeOthers(req);
   const p = [tid(req)];
@@ -88,6 +108,106 @@ consultants.get('/search', searchLimiter, async (req, res) => {
   const { rows } = await q(`SELECT ${PUBLIC_COLS}, ${score} AS score FROM consultants c WHERE ${where} ORDER BY score DESC, c.updated_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, p);
   const { rows: [{ total }] } = await q(`SELECT count(*)::int AS total FROM consultants c WHERE ${where}`, p);
   res.json({ rows: rows.map(({ score: _s, ...r }) => view(r)), total, page, size, searched_others: others });
+});
+
+// ---------- JD match: rank available profiles by how many JD skills they cover ----------
+// Built-in skills dictionary (canonical -> aliases). Extend freely; all lowercase.
+const SKILLS = {
+  'java': [], 'javascript': ['js'], 'typescript': [], 'python': [], 'sql': [], 'pl/sql': ['plsql'], 't-sql': ['tsql'],
+  'c#': ['csharp'], 'c++': ['cpp'], '.net': ['dotnet'], 'asp.net': [], 'golang': [], 'php': [], 'ruby': [], 'scala': [],
+  'kotlin': [], 'swift': [], 'rust': [], 'perl': [], 'bash': [], 'sas': [], 'matlab': [], 'cobol': [],
+  'spring boot': ['springboot'], 'spring': [], 'hibernate': [], 'react': ['reactjs', 'react.js'], 'angular': ['angularjs'],
+  'vue': ['vue.js', 'vuejs'], 'node.js': ['nodejs'], 'django': [], 'flask': [], 'fastapi': [], 'jquery': [], 'html': [], 'css': [],
+  'rest api': ['restful', 'restful api', 'rest apis'], 'graphql': [], 'microservices': [], 'junit': [], 'selenium': [], 'cypress': [],
+  'aws': [], 'azure': [], 'gcp': ['google cloud'], 'kubernetes': ['k8s'], 'docker': [], 'terraform': [], 'ansible': [],
+  'jenkins': [], 'ci/cd': [], 'git': [], 'github actions': [], 'linux': [], 'devops': [],
+  'kafka': [], 'spark': ['apache spark', 'pyspark'], 'hadoop': [], 'hive': [], 'airflow': [], 'snowflake': [], 'databricks': [],
+  'redshift': [], 'bigquery': [], 'dbt': [], 'etl': [], 'informatica': [], 'talend': [], 'ssis': [], 'ssrs': [],
+  'mongodb': [], 'postgresql': ['postgres'], 'mysql': [], 'oracle': [], 'sql server': [], 'dynamodb': [], 'redis': [],
+  'elasticsearch': [], 'cassandra': [], 'nosql': [], 'data warehouse': [], 'data modeling': [],
+  'tableau': [], 'power bi': ['powerbi'], 'looker': [], 'thoughtspot': [], 'qlik': [], 'excel': [],
+  'pandas': [], 'numpy': [], 'scikit-learn': [], 'tensorflow': [], 'pytorch': [], 'machine learning': [], 'deep learning': [],
+  'nlp': [], 'statistics': [], 'a/b testing': ['experimentation'], 'forecasting': [],
+  'salesforce': [], 'sap': [], 'servicenow': [], 'workday': [], 'peoplesoft': [], 'sharepoint': [], 'mulesoft': [],
+  'power apps': [], 'power automate': [], 'jira': [], 'agile': [], 'scrum': [],
+  'testng': [], 'postman': [], 'manual testing': [], 'automation testing': [], 'performance testing': [], 'jmeter': [],
+  'ios': [], 'android': [], 'flutter': [], 'react native': [], 'hl7': [], 'fhir': [], 'cerner': [], 'tibco': [], 'websphere': [], 'weblogic': [],
+};
+Object.assign(SKILLS, {
+  'requirements gathering': ['requirement gathering', 'requirements analysis', 'requirements elicitation'],
+  'user stories': [], 'acceptance criteria': [], 'backlog management': ['product backlog'], 'uat': ['user acceptance testing'],
+  'business process analysis': ['business process', 'process mapping'], 'stakeholder management': [], 'gap analysis': [],
+  'data mapping': [], 'data quality': [], 'data analysis': [], 'data visualization': ['data visualisation'],
+  'power platform': [], 'data lakehouse': ['lakehouse'], 'confluence': [], 'visio': [], 'bpmn': [], 'sdlc': [], 'kanban': [],
+  'project management': [], 'ecommerce': ['e-commerce'], 'rpa': [], 'uipath': [], 'api testing': [], 'wireframing': [],
+});
+const SKILL_ALIAS = new Map(Object.entries(SKILLS).flatMap(([k, al]) => al.map((a) => [a, k])));
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const hasTerm = (text, t) => new RegExp(`(?<![a-z0-9+#.])${reEsc(t)}(?![a-z0-9+#])`).test(text);
+
+const TITLES = ['business analyst', 'product owner', 'data analyst', 'data scientist', 'data engineer', 'data architect', 'software engineer',
+  'java developer', 'python developer', 'full stack developer', 'devops engineer', 'cloud engineer', 'qa engineer', 'project manager',
+  'program manager', 'scrum master', 'solutions architect', 'systems analyst', 'analytics consultant', 'bi developer', 'etl developer',
+  'salesforce developer', 'tableau developer', 'power bi developer', 'technical lead'];
+const foundTitles = (jd) => TITLES.filter((t) => hasTerm(jd, t)).slice(0, 4);
+
+consultants.post('/match', searchLimiter, async (req, res) => {
+  const others = await canSeeOthers(req);
+  const p = [tid(req)];
+  const add = (v) => { p.push(v); return `$${p.length}`; };
+  const base = others ? `(c.tenant_id = $1 OR c.visibility = 'public')` : 'c.tenant_id = $1';
+  const b = req.body || {};
+
+  let sk = csv(b.skills, 30, 40);
+  const jd = String(b.jd || '').slice(0, 20000).toLowerCase();
+  if (!sk.length && jd) {
+    // 1) built-in dictionary, 2) plus any skill already on visible, available profiles. No AI, no external calls.
+    const found = new Set(Object.entries(SKILLS).filter(([k, al]) => [k, ...al].some((t) => hasTerm(jd, t))).map(([k]) => k));
+    const { rows } = await q(`SELECT DISTINCT s FROM consultants c, unnest(c.skills) s WHERE ${base} AND c.status = 'available' AND length(s) > 1 LIMIT 5000`, p);
+    rows.forEach((r) => { if (hasTerm(jd, r.s)) found.add(SKILL_ALIAS.get(r.s) || r.s); });
+    const pos = (k) => Math.min(...[k, ...(SKILLS[k] || [])].map((t) => { const i = jd.indexOf(t); return i < 0 ? 1e9 : i; }));
+    sk = [...found].sort((x, y) => pos(x) - pos(y));
+  }
+  sk = [...new Set(sk.map((s) => SKILL_ALIAS.get(s) || s))].slice(0, 30);
+  if (!sk.length) return res.json({ skills_used: [], rows: [] });
+
+  const sn = add(sk);
+  let where = `${base} AND c.status = 'available' AND c.skills && ${sn}::text[]`;
+  const wa = csv(b.work_auth, 9, 10).map(authOf).filter(Boolean);
+  if (wa.length) where += ` AND c.work_auth = ANY(${add(wa)}::text[])`;
+  const en = csv(b.engagement, 3, 6).map((x) => x.toUpperCase()).filter((x) => ENGAGE.includes(x));
+  if (en.length) where += ` AND c.engagement && ${add(en)}::text[]`;
+  const st = txt(b.state, 60);
+  if (st) where += bool(b.onsite)
+    ? ` AND lower(c.state) = ${add(st.toLowerCase())}`
+    : ` AND (lower(c.state) = ${add(st.toLowerCase())} OR c.remote_ok OR c.relocate)`;
+  const cn = txt(b.city, 60);
+  if (cn) { const cp = add(cn.toLowerCase()); where += bool(b.onsite) ? ` AND lower(c.city) = ${cp}` : ` AND (lower(c.city) = ${cp} OR c.remote_ok OR c.relocate)`; }
+  const me = num(b.min_exp, 0, 60, 'min_exp');
+  if (me !== null) where += ` AND c.experience_yrs >= ${add(me)}`;
+  if (bool(b.remote)) where += ' AND c.remote_ok';
+  const av = txt(b.available_by, 10);
+  if (av && okDate(av)) where += ` AND (c.available_from IS NULL OR c.available_from <= ${add(av)}::date)`;
+  const mr = num(b.max_rate, 0, 1000, 'max_rate');
+  if (mr !== null) where += ` AND c.rate_usd_hr <= ${add(mr)}`;
+  if (bool(b.relocate)) where += ' AND c.relocate';
+  if (bool(b.has_resume)) where += ' AND (c.resume_text IS NOT NULL OR EXISTS (SELECT 1 FROM consultant_resumes r WHERE r.consultant_id = c.id))';
+  const mm = num(b.min_match, 0, 100, 'min_match');
+  if (mm !== null && mm > 0) where += ` AND (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) * 100 >= ${add(mm)}::numeric * ${sk.length}`;
+  const SORTS = {
+    best: 'matched DESC, c.updated_at DESC',
+    rate_low: 'c.rate_usd_hr ASC NULLS LAST, matched DESC, c.updated_at DESC',
+    exp_high: 'c.experience_yrs DESC NULLS LAST, matched DESC, c.updated_at DESC',
+    available_soon: 'c.available_from ASC NULLS FIRST, matched DESC, c.updated_at DESC',
+  };
+  const orderBy = Object.hasOwn(SORTS, b.sort) ? SORTS[b.sort] : SORTS.best;
+
+  const { rows } = await q(
+    `SELECT ${PUBLIC_COLS},
+       (SELECT count(*) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[]))::int AS matched,
+       (SELECT array_agg(s) FROM unnest(c.skills) s WHERE s = ANY(${sn}::text[])) AS matched_skills
+     FROM consultants c WHERE ${where} ORDER BY ${orderBy} LIMIT 25`, p);
+  res.json({ skills_used: sk, titles_found: foundTitles(jd), skill_aliases: Object.fromEntries(sk.map((s) => [s, Object.hasOwn(SKILLS, s) ? SKILLS[s] : []])), rows: rows.map(view) });
 });
 
 // ---------- my profiles ----------

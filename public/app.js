@@ -573,8 +573,8 @@ async function consultantsPage() {
   CS.mine = m.rows;
   const tabBtn = (k, l) => `<button type="button" class="${CS.tab === k ? '' : 'ghost'}" data-c="tab" data-t="${k}">${l}</button>`;
   await shell('consultants', `<div class="head"><div><h1>Consultants</h1><p class="muted">Add your bench, upload resumes and search profiles. Contact details are never shown to other companies.</p></div><button type="button" data-c="new">Add consultant</button></div>
-  <div class="actions" style="margin-bottom:12px">${tabBtn('search', 'Search')}${tabBtn('mine', `My profiles (${m.total})`)}</div><div id="cs-body"></div>`);
-  if (CS.tab === 'mine') cDrawMine(); else await cDrawSearch();
+  <div class="actions" style="margin-bottom:12px">${tabBtn('search', 'Search')}${tabBtn('match', 'JD match')}${tabBtn('mine', `My profiles (${m.total})`)}</div><div id="cs-body"></div>`);
+  if (CS.tab === 'mine') cDrawMine(); else if (CS.tab === 'match') cDrawMatch(); else await cDrawSearch();
 }
 
 async function cDrawSearch() {
@@ -588,6 +588,75 @@ async function cDrawSearch() {
     <label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cs-reloc"> Will relocate</label>
     <button type="button" data-c="search">Search</button></div></div><div id="cs-results"></div>`;
   await cRunSearch(1);
+}
+
+function cDrawMatch() {
+  $('#cs-body').innerHTML = `<div class="panel"><label>Job description<textarea id="cm-jd" rows="8" maxlength="20000" placeholder="Paste the requirement / JD here"></textarea></label>
+    <div style="${cGrid};margin-top:10px">
+    <label>Skills (optional, overrides JD)<input id="cm-skills" placeholder="java, spring boot, aws"></label>
+    <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
+    <div data-loc3 style="grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 16px"><label>City<input id="cm-city" placeholder="Los Angeles" maxlength="60"></label><label>State<input id="cm-state" placeholder="TX" maxlength="60"></label><label>ZIP<input id="cm-zip" placeholder="90210" maxlength="10" inputmode="numeric"></label></div><label>Min experience (yrs)<input id="cm-exp" type="number" min="0" max="60"></label><label>Engagement<select id="cm-eng"><option value="">Any</option><option>C2C</option><option>W2</option><option>1099</option></select></label><label>Available by<input id="cm-avail" type="date"></label><label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label><label>Min skill match %<input id="cm-mm" type="number" min="0" max="100" placeholder="e.g. 50"></label><label>Sort by<select id="cm-sort"><option value="">Best match</option><option value="rate_low">Rate: low to high</option><option value="exp_high">Experience: high to low</option><option value="available_soon">Available soonest</option></select></label></div>
+    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite" style="width:auto;flex:none;margin:0"> Strict onsite (locals only, needs State)</label><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-remote" style="width:auto;flex:none;margin:0"> Remote OK only</label><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-relocate" style="width:auto;flex:none;margin:0"> Relocate OK</label><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-hasres" style="width:auto;flex:none;margin:0"> Has resume</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-bool"></div><div id="cm-results"></div>`;
+}
+
+async function cRunMatch() {
+  const v = (s) => ($(s)?.value || '').trim();
+  const body = {};
+  [['jd', '#cm-jd'], ['skills', '#cm-skills'], ['work_auth', '#cm-auth'], ['state', '#cm-state'], ['max_rate', '#cm-rate'], ['city', '#cm-city'], ['min_exp', '#cm-exp'], ['engagement', '#cm-eng'], ['available_by', '#cm-avail'], ['min_match', '#cm-mm'], ['sort', '#cm-sort']].forEach(([k, s]) => { if (v(s)) body[k] = v(s); });
+  if ($('#cm-onsite')?.checked) body.onsite = true;
+  if ($('#cm-remote')?.checked) body.remote = true;
+  if ($('#cm-relocate')?.checked) body.relocate = true;
+  if ($('#cm-hasres')?.checked) body.has_resume = true;
+  if (!body.jd && !body.skills) throw new Error('Paste a JD or enter skills first.');
+  const r = await api('/consultants/match', { method: 'POST', body });
+  const used = r.skills_used || [];
+  CS.match = r; cBoolDraw();
+  const chip = (s) => `<span class="cx-sk hit" title="${esc(s)}">${esc(s)}</span>`;
+  const rows = r.rows.map((x) => `<div class="ccard cx">
+    <div class="cx-head"><button type="button" class="cname" data-c="view" data-id="${x.id}">${esc(x.full_name)}</button><span class="cx-title">${esc(x.title)}</span>${x.mine ? '<span class="badge">yours</span>' : ''}<span class="badge">${x.matched}/${used.length} skills</span></div>
+    <div class="cx-skills">${(x.matched_skills || []).map(chip).join('')}</div>
+    <div class="cx-foot"><span class="muted small">${esc(cWhere(x) || 'Location not set')} · ${esc(x.work_auth || 'Auth not set')} · ${x.rate_usd_hr != null ? '$' + esc(x.rate_usd_hr) + '/hr' : 'Rate not set'} · Available: ${x.available_from ? esc(cDate(x.available_from)) : 'Now'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button></div></div></div>`).join('');
+  $('#cm-results').innerHTML = `${used.length ? `<p class="muted small">Skills found: ${used.map(esc).join(', ')}</p>` : ''}${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div></div>` : `<div class="panel"><p>${used.length ? 'No available consultants match these skills and filters.' : 'No known skills found in this JD. Type them in the Skills field.'}</p></div>`}`;
+}
+
+function cBq(t) { return /[^a-z0-9]/i.test(t) ? '"' + t + '"' : t; }
+
+function cBoolDraw() {
+  const box = $('#cm-bool'); if (!box) return;
+  const used = CS.match?.skills_used || [];
+  if (!used.length) { box.innerHTML = ''; return; }
+  const area = ([k, l]) => `<label>${l}<textarea id="cb-${k}" rows="2" readonly></textarea></label><div class="actions" style="margin:4px 0 10px"><button type="button" class="ghost small" data-c="bcopy" data-k="${k}">Copy</button></div>`;
+  box.innerHTML = `<div class="panel"><b>Boolean string</b> <span class="muted small">Tick the must-have skills (AND). The rest go into one OR group.</span>
+    <div class="actions" style="margin:8px 0;align-items:center">${used.map((s, i) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:0;white-space:nowrap"><input type="checkbox" class="bmust" data-c="bool" data-s="${esc(s)}"${i < 3 ? ' checked' : ''}> ${esc(s)}</label>`).join('')}</div>
+    <label>Job titles (optional, comma separated)<input id="cb-titles" value="${esc((CS.match?.titles_found || []).join(', '))}" placeholder="data analyst, analytics consultant"></label>
+    <div class="actions" style="margin:8px 0"><button type="button" class="ghost small" data-c="bool">Rebuild</button></div>
+    ${[['short', 'Short (free LinkedIn search: must-have skills only)'], ['full', 'Full (Recruiter / Sales Navigator)'], ['xray', 'Google X-ray']].map(area).join('')}</div>`;
+  cBoolBuild();
+}
+
+function cBoolBuild() {
+  const r = CS.match; if (!r || !$('#cb-full')) return;
+  const al = r.skill_aliases || {};
+  const grp = (s) => { const t = [s, ...(al[s] || [])].map(cBq); return t.length > 1 ? '(' + t.join(' OR ') + ')' : t[0]; };
+  const must = [...document.querySelectorAll('.bmust:checked')].map((b) => b.dataset.s);
+  const rest = (r.skills_used || []).filter((s) => !must.includes(s));
+  const titles = ($('#cb-titles')?.value || '').split(/[,;|]/).map((x) => x.trim()).filter(Boolean);
+  const st = ($('#cm-state')?.value || '').trim();
+  const parts = [];
+  if (titles.length) parts.push('(' + titles.map(cBq).join(' OR ') + ')');
+  must.forEach((s) => parts.push(grp(s)));
+  if (rest.length) parts.push('(' + rest.map(grp).join(' OR ') + ')');
+  const loc = ($('#cm-city')?.value || '').trim() || st; if (loc) parts.push(cBq(loc));
+  const full = parts.join(' AND ');
+  $('#cb-full').value = full;
+  $('#cb-short').value = must.map(cBq).join(' AND ');
+  $('#cb-xray').value = full ? 'site:linkedin.com/in ' + full + ' -recruiter -staffing' : '';
+}
+
+async function cBoolCopy(k) {
+  const el = $('#cb-' + k); if (!el || !el.value) return;
+  try { await navigator.clipboard.writeText(el.value); } catch { el.select(); document.execCommand('copy'); }
+  toast('Copied.');
 }
 
 async function cRunSearch(page) {
@@ -830,6 +899,9 @@ document.addEventListener('click', (ev) => {
   if (c === 'hot-make') return busy(t, cHotMake);
   if (c === 'view') { window.open('#/consultants/' + id, '_blank'); return; }
   if (c === 'search') return busy(t, () => cRunSearch(1));
+  if (c === 'match') return busy(t, cRunMatch);
+  if (c === 'bool') return cBoolBuild();
+  if (c === 'bcopy') return busy(t, () => cBoolCopy(t.dataset.k));
   if (c === 'page') return busy(t, () => cRunSearch(+t.dataset.p));
   if (c === 'save') return busy(t, async () => {
     const res = await api(id ? '/consultants/' + id : '/consultants', { method: id ? 'PUT' : 'POST', body: cCollect() });
@@ -986,3 +1058,20 @@ document.addEventListener('submit', async (ev) => {
 window.addEventListener('beforeunload', (e) => { if ((ed.dirty && $('#cform')) || (jr.dirty && $('#jform'))) { e.preventDefault(); e.returnValue = ''; } });
 
 render();
+
+// JD match: ZIP -> City/State autofill (US)
+document.addEventListener('input', async (e) => {
+  if (!e.target || e.target.id !== 'cm-zip') return;
+  const z = e.target.value.trim().slice(0, 5);
+  if (!/^\d{5}$/.test(z)) return;
+  try {
+    const r = await fetch('/api/consultants/zip/' + z, { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) return;
+    const d = await r.json();
+    const p = d;
+    if (!p || e.target.value.trim().slice(0, 5) !== z) return;
+    const c = document.querySelector('#cm-city'), st = document.querySelector('#cm-state');
+    if (c) c.value = p.city;
+    if (st) st.value = p.state;
+  } catch (_) {}
+});
