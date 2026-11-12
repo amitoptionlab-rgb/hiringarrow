@@ -91,7 +91,32 @@ consultants.get('/search', searchLimiter, async (req, res) => {
 });
 
 // ---------- JD match: rank available profiles by how many JD skills they cover ----------
+// Built-in skills dictionary (canonical -> aliases). Extend freely; all lowercase.
+const SKILLS = {
+  'java': [], 'javascript': ['js'], 'typescript': [], 'python': [], 'sql': [], 'pl/sql': ['plsql'], 't-sql': ['tsql'],
+  'c#': ['csharp'], 'c++': ['cpp'], '.net': ['dotnet'], 'asp.net': [], 'golang': [], 'php': [], 'ruby': [], 'scala': [],
+  'kotlin': [], 'swift': [], 'rust': [], 'perl': [], 'bash': [], 'sas': [], 'matlab': [], 'cobol': [],
+  'spring boot': ['springboot'], 'spring': [], 'hibernate': [], 'react': ['reactjs', 'react.js'], 'angular': ['angularjs'],
+  'vue': ['vue.js', 'vuejs'], 'node.js': ['nodejs'], 'django': [], 'flask': [], 'fastapi': [], 'jquery': [], 'html': [], 'css': [],
+  'rest api': ['restful', 'restful api', 'rest apis'], 'graphql': [], 'microservices': [], 'junit': [], 'selenium': [], 'cypress': [],
+  'aws': [], 'azure': [], 'gcp': ['google cloud'], 'kubernetes': ['k8s'], 'docker': [], 'terraform': [], 'ansible': [],
+  'jenkins': [], 'ci/cd': [], 'git': [], 'github actions': [], 'linux': [], 'devops': [],
+  'kafka': [], 'spark': ['apache spark', 'pyspark'], 'hadoop': [], 'hive': [], 'airflow': [], 'snowflake': [], 'databricks': [],
+  'redshift': [], 'bigquery': [], 'dbt': [], 'etl': [], 'informatica': [], 'talend': [], 'ssis': [], 'ssrs': [],
+  'mongodb': [], 'postgresql': ['postgres'], 'mysql': [], 'oracle': [], 'sql server': [], 'dynamodb': [], 'redis': [],
+  'elasticsearch': [], 'cassandra': [], 'nosql': [], 'data warehouse': [], 'data modeling': [],
+  'tableau': [], 'power bi': ['powerbi'], 'looker': [], 'thoughtspot': [], 'qlik': [], 'excel': [],
+  'pandas': [], 'numpy': [], 'scikit-learn': [], 'tensorflow': [], 'pytorch': [], 'machine learning': [], 'deep learning': [],
+  'nlp': [], 'statistics': [], 'a/b testing': ['experimentation'], 'forecasting': [],
+  'salesforce': [], 'sap': [], 'servicenow': [], 'workday': [], 'peoplesoft': [], 'sharepoint': [], 'mulesoft': [],
+  'power apps': [], 'power automate': [], 'jira': [], 'agile': [], 'scrum': [],
+  'testng': [], 'postman': [], 'manual testing': [], 'automation testing': [], 'performance testing': [], 'jmeter': [],
+  'ios': [], 'android': [], 'flutter': [], 'react native': [], 'hl7': [], 'fhir': [], 'cerner': [], 'tibco': [], 'websphere': [], 'weblogic': [],
+};
+const SKILL_ALIAS = new Map(Object.entries(SKILLS).flatMap(([k, al]) => al.map((a) => [a, k])));
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const hasTerm = (text, t) => new RegExp(`(?<![a-z0-9+#.])${reEsc(t)}(?![a-z0-9+#])`).test(text);
+
 consultants.post('/match', searchLimiter, async (req, res) => {
   const others = await canSeeOthers(req);
   const p = [tid(req)];
@@ -102,11 +127,14 @@ consultants.post('/match', searchLimiter, async (req, res) => {
   let sk = csv(b.skills, 30, 40);
   const jd = String(b.jd || '').slice(0, 20000).toLowerCase();
   if (!sk.length && jd) {
-    // No AI: pick JD words that already exist as skills on visible, available profiles.
+    // 1) built-in dictionary, 2) plus any skill already on visible, available profiles. No AI, no external calls.
+    const found = new Set(Object.entries(SKILLS).filter(([k, al]) => [k, ...al].some((t) => hasTerm(jd, t))).map(([k]) => k));
     const { rows } = await q(`SELECT DISTINCT s FROM consultants c, unnest(c.skills) s WHERE ${base} AND c.status = 'available' AND length(s) > 1 LIMIT 5000`, p);
-    sk = rows.map((r) => r.s).filter((s) => new RegExp(`(^|[^a-z0-9+#.])${reEsc(s)}($|[^a-z0-9+#.])`).test(jd)).slice(0, 30);
+    rows.forEach((r) => { if (hasTerm(jd, r.s)) found.add(SKILL_ALIAS.get(r.s) || r.s); });
+    sk = [...found];
   }
-  if (!sk.length) bad('No known skills found. Paste a JD with skills, or type skills manually.');
+  sk = [...new Set(sk.map((s) => SKILL_ALIAS.get(s) || s))].slice(0, 30);
+  if (!sk.length) return res.json({ skills_used: [], rows: [] });
 
   const sn = add(sk);
   let where = `${base} AND c.status = 'available' AND c.skills && ${sn}::text[]`;
@@ -115,7 +143,9 @@ consultants.post('/match', searchLimiter, async (req, res) => {
   const en = csv(b.engagement, 3, 6).map((x) => x.toUpperCase()).filter((x) => ENGAGE.includes(x));
   if (en.length) where += ` AND c.engagement && ${add(en)}::text[]`;
   const st = txt(b.state, 60);
-  if (st) where += ` AND (lower(c.state) = ${add(st.toLowerCase())} OR c.remote_ok OR c.relocate)`;
+  if (st) where += bool(b.onsite)
+    ? ` AND lower(c.state) = ${add(st.toLowerCase())}`
+    : ` AND (lower(c.state) = ${add(st.toLowerCase())} OR c.remote_ok OR c.relocate)`;
   const mr = num(b.max_rate, 0, 1000, 'max_rate');
   if (mr !== null) where += ` AND c.rate_usd_hr <= ${add(mr)}`;
 
@@ -126,6 +156,7 @@ consultants.post('/match', searchLimiter, async (req, res) => {
      FROM consultants c WHERE ${where} ORDER BY matched DESC, c.updated_at DESC LIMIT 25`, p);
   res.json({ skills_used: sk, rows: rows.map(view) });
 });
+
 // ---------- my profiles ----------
 consultants.get('/mine', async (req, res) => {
   const page = Math.max(1, Math.floor(+req.query.page || 1)), size = 50;

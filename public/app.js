@@ -597,13 +597,14 @@ function cDrawMatch() {
     <label>Work authorization<select id="cm-auth"><option value="">Any</option>${C_AUTH.map((a) => `<option>${a}</option>`).join('')}</select></label>
     <label>State<input id="cm-state" placeholder="TX" maxlength="60"></label>
     <label>Max rate ($/hr)<input id="cm-rate" type="number" min="0" max="1000"></label></div>
-    <div class="actions" style="margin-top:10px"><button type="button" data-c="match">Find matches</button></div></div><div id="cm-results"></div>`;
+    <div class="actions" style="margin-top:10px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cm-onsite"> Strict onsite (locals only, needs State)</label><button type="button" data-c="match">Find matches</button></div></div><div id="cm-results"></div>`;
 }
 
 async function cRunMatch() {
   const v = (s) => ($(s)?.value || '').trim();
   const body = {};
   [['jd', '#cm-jd'], ['skills', '#cm-skills'], ['work_auth', '#cm-auth'], ['state', '#cm-state'], ['max_rate', '#cm-rate']].forEach(([k, s]) => { if (v(s)) body[k] = v(s); });
+  if ($('#cm-onsite')?.checked) body.onsite = true;
   if (!body.jd && !body.skills) throw new Error('Paste a JD or enter skills first.');
   const r = await api('/consultants/match', { method: 'POST', body });
   const used = r.skills_used || [];
@@ -612,7 +613,7 @@ async function cRunMatch() {
     <div class="cx-head"><button type="button" class="cname" data-c="view" data-id="${x.id}">${esc(x.full_name)}</button><span class="cx-title">${esc(x.title)}</span>${x.mine ? '<span class="badge">yours</span>' : ''}<span class="badge">${x.matched}/${used.length} skills</span></div>
     <div class="cx-skills">${(x.matched_skills || []).map(chip).join('')}</div>
     <div class="cx-foot"><span class="muted small">${esc(cWhere(x) || 'Location not set')} · ${esc(x.work_auth || 'Auth not set')} · ${x.rate_usd_hr != null ? '$' + esc(x.rate_usd_hr) + '/hr' : 'Rate not set'} · Available: ${x.available_from ? esc(cDate(x.available_from)) : 'Now'}</span><div class="r"><button type="button" class="ghost small" data-c="view" data-id="${x.id}">View</button></div></div></div>`).join('');
-  $('#cm-results').innerHTML = `<p class="muted small">Matched on: ${used.map(esc).join(', ')}</p>${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div></div>` : '<div class="panel"><p>No available consultants match these skills and filters.</p></div>'}`;
+  $('#cm-results').innerHTML = `${used.length ? `<p class="muted small">Skills found: ${used.map(esc).join(', ')}</p>` : ''}${r.rows.length ? `<div class="panel"><div class="cs-list">${rows}</div></div>` : `<div class="panel"><p>${used.length ? 'No available consultants match these skills and filters.' : 'No known skills found in this JD. Type them in the Skills field.'}</p></div>`}`;
 }
 
 async function cRunSearch(page) {
