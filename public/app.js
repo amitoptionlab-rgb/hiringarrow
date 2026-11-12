@@ -1064,13 +1064,13 @@ document.addEventListener('input', async (e) => {
   const z = e.target.value.trim().slice(0, 5);
   if (!/^\d{5}$/.test(z)) return;
   try {
-    const r = await fetch('https://api.zippopotam.us/us/' + z);
+    const r = await fetch('/api/consultants/zip/' + z, { credentials: 'same-origin' });
     if (!r.ok) return;
     const d = await r.json();
-    const p = d.places && d.places[0];
+    const p = d;
     if (!p || e.target.value.trim().slice(0, 5) !== z) return;
     const c = document.querySelector('#cm-city'), st = document.querySelector('#cm-state');
-    if (c) c.value = p['place name'];
-    if (st) st.value = p['state abbreviation'];
+    if (c) c.value = p.city;
+    if (st) st.value = p.state;
   } catch (_) {}
 });

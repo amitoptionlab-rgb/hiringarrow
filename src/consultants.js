@@ -61,6 +61,26 @@ const PUBLIC_COLS = `c.id, c.full_name, c.title, c.skills, c.experience_yrs, c.w
 const view = (r) => (r.mine ? r : { ...r, full_name: maskName(r.full_name) });
 
 // ---------- search (own profiles + other tenants' public, available ones) ----------
+const zipCache = new Map();
+consultants.get('/zip/:zip', searchLimiter, async (req, res) => {
+  const z = String(req.params.zip || '').trim();
+  if (!/^\d{5}$/.test(z)) return res.status(400).json({ error: 'ZIP must be 5 digits.' });
+  if (zipCache.has(z)) return res.json(zipCache.get(z));
+  try {
+    const r = await fetch('https://api.zippopotam.us/us/' + z, { signal: AbortSignal.timeout(4000) });
+    if (r.status === 404) return res.status(404).json({ error: 'ZIP not found.' });
+    if (!r.ok) return res.status(502).json({ error: 'ZIP lookup failed.' });
+    const d = await r.json();
+    const p = d.places && d.places[0];
+    if (!p) return res.status(404).json({ error: 'ZIP not found.' });
+    const out = { city: p['place name'], state: p['state abbreviation'] };
+    zipCache.set(z, out);
+    return res.json(out);
+  } catch (_) {
+    return res.status(502).json({ error: 'ZIP lookup failed.' });
+  }
+});
+
 consultants.get('/search', searchLimiter, async (req, res) => {
   const others = await canSeeOthers(req);
   const p = [tid(req)];
