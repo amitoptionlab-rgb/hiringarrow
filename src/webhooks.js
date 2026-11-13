@@ -4,6 +4,7 @@ import MessageValidator from 'sns-validator';
 import { config } from './config.js';
 import { q } from './db.js';
 import { suppress } from './lib/suppress.js';
+import { handleInbound } from './lib/inbound.js';
 
 export const webhooks = express.Router();
 const validator = new MessageValidator();
@@ -122,4 +123,25 @@ webhooks.post('/brevo', express.json({ limit: '1mb' }), async (req, res) => {
   const events = Array.isArray(req.body) ? req.body : [req.body];
   for (const e of events.slice(0, 500)) { try { await brevoEvent(e); } catch (err) { console.error('[brevo]', err.message); } }
   res.end();
+});
+
+// ---------- Inbound replies (Brevo inbound parsing, Postmark, ...) ----------
+// Provider posts to  https://YOUR_HOST/webhooks/inbound?token=INBOUND_WEBHOOK_SECRET  (falls back to BREVO_WEBHOOK_SECRET).
+// Postmark can use Basic auth in the URL instead. Only reply addresses with a valid HMAC are stored, everything else is dropped.
+function inboundAuthorised(req) {
+  const secret = config.inboundSecret;
+  if (!secret) return false;                                                    // not configured: refuse everything
+  if (typeof req.query.token === 'string' && same(req.query.token, secret)) return true;
+  const h = req.headers.authorization || '';
+  if (h.startsWith('Bearer ')) return same(h.slice(7), secret);
+  if (h.startsWith('Basic ')) { const pw = Buffer.from(h.slice(6), 'base64').toString().split(':').slice(1).join(':'); return same(pw, secret); }
+  return false;
+}
+webhooks.post('/inbound', express.json({ limit: '10mb' }), async (req, res) => {
+  if (!inboundAuthorised(req)) return res.status(401).end();
+  const b = req.body;
+  const items = Array.isArray(b?.items) ? b.items : Array.isArray(b) ? b : (b && typeof b === 'object' ? [b] : []);
+  let failed = false;
+  for (const it of items.slice(0, 500)) { try { await handleInbound(it); } catch (err) { failed = true; console.error('[inbound]', err.message); } }
+  res.status(failed ? 500 : 200).end();   // 500 lets the provider retry; duplicates are dropped by provider_event_id
 });

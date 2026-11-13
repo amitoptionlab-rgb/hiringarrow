@@ -4,7 +4,7 @@ import { q } from './db.js';
 import { connection } from './queue.js';
 import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
-import { signId } from './lib/tokens.js';
+import { signId, replyAddress } from './lib/tokens.js';
 import { suppress } from './lib/suppress.js';
 import { startCampaign } from './lib/campaign-send.js';
 import { bulkHeaders } from './lib/headers.js';
@@ -102,7 +102,7 @@ async function handleJob(job) {
     sent = await sendMail({
       from: `"${m.from_name.replace(/"/g, '')}" <${m.from_email}>`,
       to: m.email,
-      replyTo: m.reply_to || undefined,
+      replyTo: replyAddress(m.id) || m.reply_to || undefined,
       subject: m.variant === 'B' && m.subject_b ? m.subject_b : m.subject,
       html, text,
       headers: bulkHeaders({ messageId: m.id, campaignId: m.campaign_id, tenantId: m.tenant_id, unsubUrl }),

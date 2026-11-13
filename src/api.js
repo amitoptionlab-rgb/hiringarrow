@@ -16,6 +16,7 @@ import { enrollSafe } from './lib/automation.js';
 import { automations } from './automations.js';
 import { aiRouter } from './ai.js';
 import { consultants } from './consultants.js';
+import { inbox } from './inbox.js';
 import crypto from 'node:crypto';
 import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
@@ -87,6 +88,7 @@ const testLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHea
 api.use('/automations', automations);
 api.use('/ai', aiRouter);
 api.use('/consultants', consultants);
+api.use('/inbox', inbox);
 
 api.get('/me', async (req, res) => {
   const { rows: [r] } = await q(
