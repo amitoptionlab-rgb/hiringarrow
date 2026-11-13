@@ -45,6 +45,8 @@ api.post('/auth/signup', authLimiter, async (req, res) => {
   const user = await tx(async (c) => {
     const { rows: [dup] } = await c.query('SELECT 1 FROM users WHERE email = $1', [email]);
     if (dup) throw new HttpError(409, 'An account with this email already exists. Log in instead.');
+    const dd = await c.query("SELECT 1 FROM users WHERE email_verified_at IS NOT NULL AND lower(split_part(email::text, '@', 2)) = $1 LIMIT 1", [email.split('@')[1]]);
+    if (config.oneCompanyPerDomain && dd.rows.length) throw new HttpError(409, 'A company account for this email domain already exists. Ask your account owner to add you.');
     const { rows: [plan] } = await c.query(`SELECT id FROM plans WHERE code = 'free'`);
     // New accounts start in review with a small daily cap. Admin approval raises it.
     const status = config.autoApprove ? 'active' : 'review';
