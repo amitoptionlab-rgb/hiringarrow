@@ -23,6 +23,7 @@ import { allowance } from './lib/limits.js';
 import { sendVerifyMail } from './lib/verify-mail.js';
 import { isFreeEmail } from './lib/email-policy.js';
 import { audit, auditMutations } from './lib/audit.js';
+import { sesEnabled, ensureIdentity, deleteIdentity, dkimRecords } from './lib/ses.js';
 
 export const api = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -256,9 +257,26 @@ api.delete('/keys/:id', async (req, res) => {
 });
 
 // ---------- sending domains ----------
+// "Verified" needs ALL of: (1) the tenant proved ownership with the HMAC TXT record below,
+// (2) Amazon SES has verified the identity, (3) SES reports DKIM = SUCCESS.
+// SES identities are account-wide, so SES status alone does NOT prove this tenant owns the domain.
+const txt = async (name) => { try { return (await dns.resolveTxt(name)).map((a) => a.join('')); } catch { return []; } };
+// Proof of ownership: the tenant must publish this TXT record before a domain can become verified.
+// Stateless (HMAC of server secret + tenant + domain): no migration needed, and one tenant's token is useless to another tenant.
+const OWNERSHIP_LABEL = 'hiringarrow-verify';
+const ownershipValue = (tenantId, domain) => OWNERSHIP_LABEL + '=' + crypto.createHmac('sha256', config.signSecret).update('domain-verify:' + tenantId + ':' + domain).digest('hex').slice(0, 32);
+const ownershipRecord = (tenantId, domain) => ({ type: 'TXT', host: '_' + OWNERSHIP_LABEL + '.' + domain, value: ownershipValue(tenantId, domain) });
+// mail.acme.co.in -> mail.acme.co.in, acme.co.in, co.in (works for multi-label suffixes, unlike "last two labels")
+const ancestors = (dom) => { const l = dom.split('.'); return l.slice(0, -1).map((_, i) => l.slice(i).join('.')); };
+const domainView = (r, tenantId) => ({
+  id: r.id, domain: r.domain, spf_ok: r.spf_ok, dkim_ok: r.dkim_ok, dmarc_ok: r.dmarc_ok, verified_at: r.verified_at,
+  ownership_record: ownershipRecord(tenantId, r.domain),
+  dkim_records: dkimRecords(r.domain, r.ses_dkim_tokens),
+});
+
 api.get('/domains', async (req, res) => {
-  const { rows } = await q('SELECT id, domain, spf_ok, dkim_ok, dmarc_ok, dkim_selector, verified_at FROM sending_domains WHERE tenant_id = $1 ORDER BY domain', [tid(req)]);
-  res.json(rows.map((r) => ({ ...r, ownership_record: ownershipRecord(tid(req), r.domain) })));
+  const { rows } = await q('SELECT id, domain, spf_ok, dkim_ok, dmarc_ok, verified_at, ses_dkim_tokens FROM sending_domains WHERE tenant_id = $1 ORDER BY domain', [tid(req)]);
+  res.json(rows.map((r) => domainView(r, tid(req))));
 });
 api.post('/domains', async (req, res) => {
   const domain = need(req.body.domain, 'Enter a domain.').toLowerCase().replace(/^.*@/, '');
@@ -266,39 +284,51 @@ api.post('/domains', async (req, res) => {
   const { rows: [plan] } = await q(`SELECT p.max_domains FROM tenants t JOIN plans p ON p.id = t.plan_id WHERE t.id = $1`, [tid(req)]);
   const { rows: [{ n }] } = await q('SELECT count(*)::int AS n FROM sending_domains WHERE tenant_id = $1', [tid(req)]);
   if (n >= plan.max_domains) throw new HttpError(402, `Your plan allows ${plan.max_domains} sending domain(s). Upgrade to add more.`);
+  let d;
   try {
-    const { rows: [d] } = await q('INSERT INTO sending_domains (tenant_id, domain, dkim_selector) VALUES ($1, $2, $3) RETURNING id', [tid(req), domain, String(req.body.dkim_selector || '').trim() || null]);
-    res.status(201).json({ ...d, ownership_record: ownershipRecord(tid(req), domain) });
+    ({ rows: [d] } = await q('INSERT INTO sending_domains (tenant_id, domain) VALUES ($1, $2) RETURNING *', [tid(req), domain]));
   } catch (e) { if (e.code === '23505') throw new HttpError(409, 'That domain is already added.'); throw e; }
+  if (sesEnabled) {
+    try {
+      const s = await ensureIdentity(domain);
+      await q('UPDATE sending_domains SET ses_dkim_tokens = $2, ses_status = $3 WHERE id = $1', [d.id, s.tokens, s.dkimStatus]);
+      d.ses_dkim_tokens = s.tokens;
+    } catch (e) {
+      await q('DELETE FROM sending_domains WHERE id = $1', [d.id]);
+      console.error('[ses] create identity failed for ' + domain + ': ' + e.message);
+      throw new HttpError(502, 'Could not set up this domain with the email provider. Try again in a minute.');
+    }
+  }
+  res.status(201).json(domainView(d, tid(req)));
 });
 api.delete('/domains/:id', async (req, res) => {
-  await q('DELETE FROM sending_domains WHERE id = $1 AND tenant_id = $2', [uuid(req.params.id), tid(req)]);
+  const { rows: [d] } = await q('DELETE FROM sending_domains WHERE id = $1 AND tenant_id = $2 RETURNING domain', [uuid(req.params.id), tid(req)]);
+  if (d && sesEnabled) {
+    const sysDomain = (String(config.systemFrom).match(/@([^>\s]+)/) || [])[1]?.toLowerCase();
+    const { rows: [other] } = await q('SELECT 1 FROM sending_domains WHERE domain = $1 LIMIT 1', [d.domain]);
+    if (!other && d.domain !== sysDomain) {
+      try { await deleteIdentity(d.domain); } catch (e) { console.error('[ses] delete identity failed for ' + d.domain + ': ' + e.message); }
+    }
+  }
   res.json({ ok: true });
 });
-const txt = async (name) => { try { return (await dns.resolveTxt(name)).map((a) => a.join('')); } catch { return []; } };
-// Proof of ownership: the tenant must publish this TXT record before a domain can become verified.
-// Stateless (HMAC of server secret + tenant + domain): no migration needed, and one tenant's token is useless to another tenant.
-const OWNERSHIP_LABEL = 'hiringarrow-verify';
-const ownershipValue = (tenantId, domain) => OWNERSHIP_LABEL + '=' + crypto.createHmac('sha256', config.signSecret).update('domain-verify:' + tenantId + ':' + domain).digest('hex').slice(0, 32);
-const ownershipRecord = (tenantId, domain) => ({ type: 'TXT', host: '_' + OWNERSHIP_LABEL + '.' + domain, value: ownershipValue(tenantId, domain) });
 api.post('/domains/:id/check', async (req, res) => {
+  if (!sesEnabled) throw new HttpError(503, 'Domain verification is not set up on this server yet.');
   const { rows: [d] } = await q('SELECT * FROM sending_domains WHERE id = $1 AND tenant_id = $2', [uuid(req.params.id), tid(req)]);
   if (!d) throw new HttpError(404, 'Domain not found.');
-  if (req.body?.dkim_selector) d.dkim_selector = String(req.body.dkim_selector).trim();
-  const root = d.domain.split('.').slice(-2).join('.');
-  const spf = [...await txt(d.domain), ...(root !== d.domain ? await txt(root) : [])].some((t) => /^v=spf1\b/i.test(t));
-  let dkim = false;
-  if (d.dkim_selector) {
-    const host = `${d.dkim_selector}._domainkey.${d.domain}`;
-    dkim = (await txt(host)).some((t) => /v=DKIM1|p=/i.test(t));
-    if (!dkim) { try { dkim = (await dns.resolveCname(host)).length > 0; } catch { /* none */ } }
-  }
-  const dmarc = [...await txt(`_dmarc.${d.domain}`), ...(root !== d.domain ? await txt(`_dmarc.${root}`) : [])].some((t) => /^v=DMARC1/i.test(t));
+  let s;
+  try { s = await ensureIdentity(d.domain); }
+  catch (e) { console.error('[ses] identity lookup failed for ' + d.domain + ': ' + e.message); throw new HttpError(502, 'Could not reach the email provider. Try again in a minute.'); }
+  const anc = ancestors(d.domain);
+  const spf = (await Promise.all(anc.map((a) => txt(a)))).flat().some((t) => /^v=spf1\b/i.test(t));
+  const dmarc = (await Promise.all(anc.map((a) => txt('_dmarc.' + a)))).flat().some((t) => /^v=DMARC1/i.test(t));
   const owner = (await txt('_' + OWNERSHIP_LABEL + '.' + d.domain)).some((v) => v.trim() === ownershipValue(d.tenant_id, d.domain));
-  const verified = owner && spf && dkim;
-  await q('UPDATE sending_domains SET spf_ok = $2, dkim_ok = $3, dmarc_ok = $4, dkim_selector = $5, verified_at = CASE WHEN $6 THEN COALESCE(verified_at, now()) ELSE NULL END WHERE id = $1',
-    [d.id, spf, dkim, dmarc, d.dkim_selector, verified]);
-  res.json({ spf, dkim, dmarc, owner, verified, needs_selector: !d.dkim_selector, ownership_record: ownershipRecord(d.tenant_id, d.domain) });
+  const dkim = s.dkimStatus === 'SUCCESS';
+  const verified = owner && s.verifiedForSending && dkim;
+  await q('UPDATE sending_domains SET spf_ok = $2, dkim_ok = $3, dmarc_ok = $4, ses_dkim_tokens = $5, ses_status = $6, verified_at = CASE WHEN $7 THEN COALESCE(verified_at, now()) ELSE NULL END WHERE id = $1',
+    [d.id, spf, dkim, dmarc, s.tokens, s.dkimStatus, verified]);
+  res.json({ spf, dkim, dmarc, owner, ses_verified: s.verifiedForSending, ses_dkim_status: s.dkimStatus, verified,
+    ownership_record: ownershipRecord(d.tenant_id, d.domain), dkim_records: dkimRecords(d.domain, s.tokens) });
 });
 
 // ---------- campaigns ----------

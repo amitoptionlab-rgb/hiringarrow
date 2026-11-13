@@ -337,14 +337,16 @@ async function contacts() {
 async function domains() {
   const ds = await api('/domains');
   const yn = (b) => `<span class="badge ${b ? 'ok' : 'no'}">${b ? 'found' : 'missing'}</span>`;
+  const rec = (r) => `<tr><td><code>${esc(r.type)}</code></td><td><code>${esc(r.host)}</code></td><td><code>${esc(r.value)}</code></td></tr>`;
+  const todo = ds.filter((d) => !d.verified_at);
   await shell('domains', `<div class="head"><div><h1>Sending domains</h1><p class="muted">Gmail, Outlook and Yahoo check these records. Without them your email goes to spam.</p></div></div>
-  <div class="panel">${ds.length ? `<div class="tablewrap"><table><thead><tr><th>Domain</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>DKIM selector</th><th></th></tr></thead><tbody>${ds.map((d) => `<tr><td><b>${esc(d.domain)}</b><br>${d.verified_at ? '<span class="badge ok">verified</span>' : '<span class="badge pending">not verified</span>'}</td><td>${yn(d.spf_ok)}</td><td>${yn(d.dkim_ok)}</td><td>${yn(d.dmarc_ok)}</td>
-  <td><input id="sel-${d.id}" value="${esc(d.dkim_selector || '')}" placeholder="e.g. selector1" style="margin:0;max-width:160px" aria-label="DKIM selector"></td>
+  <div class="panel">${ds.length ? `<div class="tablewrap"><table><thead><tr><th>Domain</th><th>DKIM</th><th>SPF</th><th>DMARC</th><th></th></tr></thead><tbody>${ds.map((d) => `<tr><td><b>${esc(d.domain)}</b><br>${d.verified_at ? '<span class="badge ok">verified</span>' : '<span class="badge pending">not verified</span>'}</td><td>${yn(d.dkim_ok)}</td><td>${yn(d.spf_ok)}</td><td>${yn(d.dmarc_ok)}</td>
   <td class="n"><button class="small" data-act="dnscheck" data-id="${d.id}">Check DNS</button> <button class="small danger" data-act="deldomain" data-id="${d.id}">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No domains yet.</p>'}
   <form data-form="domain" class="actions" style="margin-top:14px"><input name="domain" placeholder="mail.yourbrand.com" required style="max-width:280px;margin:0"><button>Add domain</button></form></div>
-  <div class="panel"><h2>DNS records to add</h2><p>Add these at your domain provider (replace <code>yourbrand.com</code>), wait a few minutes, then press Check DNS.</p>
-  <p><b>SPF</b> (TXT on the domain): <code>v=spf1 include:amazonses.com ~all</code></p>
-  <p><b>DKIM</b>: your email provider gives you a selector and key. With Amazon SES these are three CNAME records. Type the selector name in the box above.</p>
+  ${todo.map((d) => `<div class="panel"><h2>DNS records for ${esc(d.domain)}</h2><p>Add these records at your domain provider, wait a few minutes, then press Check DNS. The TXT record proves you own the domain. The CNAME records let Amazon SES sign your email (DKIM).</p>
+  <div class="tablewrap"><table><thead><tr><th>Type</th><th>Name</th><th>Value</th></tr></thead><tbody>${[d.ownership_record, ...(d.dkim_records || [])].map(rec).join('')}</tbody></table></div>
+  ${(d.dkim_records || []).length ? '' : '<p class="muted">The DKIM records appear after you press Check DNS once.</p>'}</div>`).join('')}
+  <div class="panel"><h2>Recommended</h2>
   <p><b>DMARC</b> (TXT on <code>_dmarc.yourbrand.com</code>): <code>v=DMARC1; p=none; rua=mailto:dmarc@yourbrand.com</code>. Move to <code>p=quarantine</code> after a few weeks of clean reports.</p>
   <p class="muted">Use a subdomain like <code>mail.yourbrand.com</code> for marketing so your main domain's reputation stays safe.</p></div>`);
 }
@@ -978,8 +980,8 @@ document.addEventListener('click', (ev) => {
   if (act === 'cpage') { cstate.page = +t.dataset.p; return render(); }
   if (act === 'deldomain') return done(async () => { await api('/domains/' + id, { method: 'DELETE' }); render(); });
   if (act === 'dnscheck') return done(async () => {
-    const r = await api(`/domains/${id}/check`, { method: 'POST', body: { dkim_selector: $('#sel-' + id).value } });
-    toast(r.verified ? 'Domain verified.' : (r.needs_selector ? 'Enter your DKIM selector, then check again.' : 'Some records are still missing. DNS can take a few minutes.'), !r.verified); render();
+    const r = await api(`/domains/${id}/check`, { method: 'POST' });
+    toast(r.verified ? 'Domain verified.' : (!r.owner ? 'Ownership TXT record not found yet. DNS can take a few minutes.' : (r.ses_dkim_status !== 'SUCCESS' ? 'DKIM CNAME records are not verified yet. DNS can take a few minutes.' : 'Some records are still missing. DNS can take a few minutes.')), !r.verified); render();
   });
   if (act === 'subscribe') return done(async () => {
     const r = await api('/billing/subscribe', { method: 'POST', body: { plan_code: t.dataset.code } });

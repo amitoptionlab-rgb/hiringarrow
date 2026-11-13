@@ -25,6 +25,8 @@ export const config = {
   requireEmailVerify: e.REQUIRE_EMAIL_VERIFY === 'true',   // new signups must confirm their email before the first login
   brevo: { webhookSecret: e.BREVO_WEBHOOK_SECRET || '' },       // protects POST /webhooks/brevo
   snsVerify: e.SNS_VERIFY !== 'false',
+  snsTopicArn: e.SNS_TOPIC_ARN || '',              // if set, /webhooks/ses accepts only this SNS topic
+  ses: { region: e.AWS_REGION || '', accessKeyId: e.AWS_ACCESS_KEY_ID || '', secretAccessKey: e.AWS_SECRET_ACCESS_KEY || '', configurationSet: e.SES_CONFIGURATION_SET || '' },   // web service only: SES domain identities
   razorpay: {
     keyId: e.RAZORPAY_KEY_ID || '',
     keySecret: e.RAZORPAY_KEY_SECRET || '',
