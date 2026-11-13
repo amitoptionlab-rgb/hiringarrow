@@ -6,6 +6,14 @@
 <div id="app" hidden>
 <header><h1>hiringarrow admin</h1><button id="lock" class="ghost">Lock</button></header>
 <div id="stats"></div>
+<nav id="tabs"><button data-tab="accounts" class="on">Accounts</button><button data-tab="alerts">Alerts</button><button data-tab="audit">Audit log</button><button data-tab="trends">Trends</button></nav>
+<section id="v-alerts" class="xv" hidden></section>
+<section id="v-audit" class="xv" hidden>
+<div class="fbar"><input id="au-email" placeholder="Email / actor"><input id="au-ip" placeholder="IP"><input id="au-action" placeholder="Action (e.g. POST /admin)"><input id="au-tenant" placeholder="Tenant id (uuid)"><input id="au-from" type="date" title="From"><input id="au-to" type="date" title="To"><button id="au-go">Search</button><button id="au-csv" class="ghost">Export CSV</button></div>
+<div class="xwrap"><table><thead><tr><th>When</th><th>Actor</th><th>Tenant</th><th>Action</th><th>OK</th><th>IP</th><th>Device</th><th>Target</th></tr></thead><tbody id="au-rows"></tbody></table></div>
+<div class="xpager"><button id="au-prev" class="ghost">Prev</button><span id="au-page"></span><button id="au-next" class="ghost">Next</button></div>
+</section>
+<section id="v-trends" class="xv" hidden><div class="fbar"><select id="tr-days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></div><div id="tr-box"></div></section>
 <div class="bar">
 <input id="q" placeholder="Search tenant name or user email">
 <select id="fs"><option value="">All status</option><option>review</option><option>active</option><option>paused</option><option>suspended</option></select>
@@ -18,4 +26,5 @@
 <aside id="panel" hidden></aside>
 <div id="toast"></div>
 <script src="/admin.js"></script>
+<script src="/admin-extra.js"></script>
 </body></html>

@@ -35,3 +35,17 @@ tbody tr{cursor:pointer}tbody tr:hover{background:var(--card)}
 #panel table td,#panel table th{padding:6px 8px;font-size:13px}#panel tbody tr{cursor:default}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--ok);padding:10px 16px;border-radius:8px;display:none}
 #toast.show{display:block}#toast.bad{border-color:var(--bad)}
+
+#tabs{display:flex;gap:6px;padding:0 16px 12px;flex-wrap:wrap}
+#tabs button.on{border-color:var(--ac);color:var(--ac)}#tabs button.warn{border-color:var(--bad);color:var(--bad)}
+.xv{padding:0 16px 16px}.xv h3{margin:18px 0 8px}
+.fbar{display:flex;gap:8px;padding:0 0 12px;flex-wrap:wrap}.fbar input{min-width:140px}
+.xwrap{overflow-x:auto}.xpager{display:flex;gap:12px;align-items:center;justify-content:center;padding:14px}
+.chart{width:100%;max-width:720px;height:auto;background:var(--card);border:1px solid var(--bd);border-radius:8px}
+.chart .ax{stroke:var(--bd)}.chart .tk{fill:var(--mu);font-size:10px}
+.chart .ln{stroke-width:2}.chart .ln.c1,.chart .pt.c1{stroke:var(--ac)}.chart .pt.c1{fill:var(--ac)}
+.chart .ln.c2,.chart .pt.c2{stroke:var(--bad)}.chart .pt.c2{fill:var(--bad)}
+.chart .ln.c3,.chart .pt.c3{stroke:var(--ok)}.chart .pt.c3{fill:var(--ok)}
+.legend{display:flex;gap:14px;color:var(--mu);font-size:12px;padding:4px 0}
+.lg::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;background:var(--mu)}
+.lg.c1::before{background:var(--ac)}.lg.c2::before{background:var(--bad)}.lg.c3::before{background:var(--ok)}
