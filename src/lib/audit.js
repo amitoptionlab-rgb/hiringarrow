@@ -69,8 +69,9 @@ export const auditMutations = () => (req, res, next) => {
   next();
 };
 
-// Operator endpoints (x-admin-key). Logs every request, GET included (who looked at what), with the self-declared x-admin-name.
+// Operator endpoints (x-admin-key). Logs state-changing requests only (POST/PUT/PATCH/DELETE); GET/HEAD/OPTIONS are skipped to keep the trail readable. Uses the self-declared x-admin-name.
 export const auditAdmin = () => (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   const label = String(req.headers['x-admin-name'] || '').replace(/[^\w .@-]/g, '').slice(0, 60) || 'admin-key';
   res.on('finish', () => {
     if (!req.route) return;
