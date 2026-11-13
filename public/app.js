@@ -116,7 +116,7 @@ async function overview() {
   const [s, camps] = await Promise.all([api('/stats'), api('/campaigns')]);
   const rows = [['Sent', s.sent, 100], ['Delivered', s.delivered, pct(s.delivered, s.sent)], ['Opened', s.opens, pct(s.opens, s.sent)], ['Clicked', s.clicks, pct(s.clicks, s.sent)]];
   const cr = pct(s.complained, s.sent) / 100, br = pct(s.bounced, s.sent) / 100;
-  const banner = me.status === 'review' ? `<div class="banner"><b>Your account is under review.</b> You can send up to ${num(me.daily_send_cap)} emails a day until we approve it.</div>`
+  const banner = me.status === 'review' ? `<div class="banner"><b>Your account is under review.</b> You can build campaigns and send test emails to yourself. Sending to contacts unlocks once we approve your account.</div>`
     : (['suspended', 'paused'].includes(me.status) ? '<div class="banner bad"><b>Sending is switched off for your account.</b> Contact support.</div>' : '');
   const pctFmt = (v) => (v * 100).toFixed(2) + '%';
   const labels = s.series.map((d) => new Date(d.day + 'T00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
@@ -303,7 +303,7 @@ async function reviewAndSend(btn) {
     const id = await saveCampaign(true); const body = collect();
     const [pf, aud] = await Promise.all([api(`/campaigns/${id}/preflight`, { method: 'POST' }), api('/audience/preview', { method: 'POST', body: { list_id: body.list_id, segment: body.segment, campaign_id: null } })]);
     const blocked = pf.errors.length || !aud.count;
-    const cap = me.status === 'review' ? `<p class="small muted">Your account is under review, so at most ${num(me.daily_send_cap)} emails go out per day.</p>` : '';
+    const cap = me.status === 'review' ? `<p class="small muted">Your account is under review, so sending to contacts is locked until we approve it. You can still send yourself a test.</p>` : '';
     modal(`<h2>${blocked ? 'Fix a few things first' : `Send to ${num(aud.count)} ${aud.count === 1 ? 'person' : 'people'}?`}</h2>
       <dl class="sumline"><dt>From</dt><dd>${esc(body.from_name)} &lt;${esc(body.from_email)}&gt;</dd><dt>Subject</dt><dd>${esc(body.subject)}${body.subject_b ? `<br>${esc(body.subject_b)} <span class="muted">(version B, ${body.ab_split}%)</span>` : ''}</dd>
       <dt>Audience</dt><dd>${num(aud.count)} ${body.segment ? 'matching your conditions' : 'subscribed contacts'}</dd><dt>Spam score</dt><dd>${pf.score}/10 ${pf.score < 3 ? '· looks safe' : ''}</dd></dl>
