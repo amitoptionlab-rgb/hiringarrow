@@ -14,6 +14,7 @@ webhooks.post('/ses', express.text({ type: '*/*', limit: '1mb' }), async (req, r
   let body;
   try { body = JSON.parse(req.body); } catch { return res.status(400).end(); }
   try { if (config.snsVerify) await validate(body); } catch { return res.status(403).end(); }
+  if (config.snsTopicArn && body.TopicArn !== config.snsTopicArn) return res.status(403).end();
 
   if (body.Type === 'SubscriptionConfirmation') {
     if (/^https:\/\/sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?\//.test(body.SubscribeURL || '')) await fetch(body.SubscribeURL);

@@ -20,6 +20,7 @@
     "test:headers": "node scripts/headers-test.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1169.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^6.7.0",
     "csv-parse": "^7.0.3",
