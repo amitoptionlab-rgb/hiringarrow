@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Admin</title><link rel="stylesheet" href="/admin.css"></head>
+<body>
+<div id="gate"><h1>Admin</h1><p>Admin key (kept in this tab only).</p>
+<div class="row"><input id="key" type="password" placeholder="x-admin-key" autocomplete="off"><button id="go">Unlock</button></div><p id="gerr" class="err"></p></div>
+<div id="app" hidden>
+<header><h1>hiringarrow admin</h1><button id="lock" class="ghost">Lock</button></header>
+<div id="stats"></div>
+<div class="bar">
+<input id="q" placeholder="Search tenant name or user email">
+<select id="fs"><option value="">All status</option><option>review</option><option>active</option><option>paused</option><option>suspended</option></select>
+<select id="fp"><option value="">All plans</option><option>free</option><option>starter</option><option>growth</option><option>pro</option></select>
+<button id="refresh" class="ghost">Refresh</button>
+</div>
+<div class="wrap"><table><thead><tr><th>Account</th><th>Status</th><th>Plan</th><th>Users</th><th>Sent</th><th>Bounce / Compl.</th><th>Last login</th><th>Created</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="pager"><button id="prev" class="ghost">Prev</button><span id="page"></span><button id="next" class="ghost">Next</button></div>
+</div>
+<aside id="panel" hidden></aside>
+<div id="toast"></div>
+<script src="/admin.js"></script>
+</body></html>
