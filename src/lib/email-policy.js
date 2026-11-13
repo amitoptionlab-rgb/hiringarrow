@@ -24,3 +24,5 @@ export async function hasMx(domain) {
 }
 
 export function isFreeEmail(email) { const d = domainOf(email); return !!d && FREE.has(d); }
+
+['email.com','pm.me','rocketmail.com','gmx.net','yahoo.co.uk','hotmail.co.uk','live.in'].forEach((d) => FREE.add(d));
