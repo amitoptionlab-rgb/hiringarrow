@@ -24,3 +24,19 @@ export function verifyTimed(kind, token) {
 }
 export const signLink = (messageId, url) => mac(`l:${messageId}:${url}`);
 export const verifyLink = (messageId, url, sig) => same(mac(`l:${messageId}:${url}`), String(sig || ''));
+
+// Reply-To address: r-<32 hex message id><12 hex mac>@REPLY_DOMAIN
+// Hex and lower-case only: mail systems may lower-case the local part and "+tags" are not supported everywhere.
+const replyMac = (hex) => crypto.createHmac('sha256', config.signSecret).update('reply:' + hex).digest('hex').slice(0, 12);
+export function replyAddress(messageId, domain = config.replyDomain) {
+  const hex = String(messageId).replace(/-/g, '').toLowerCase();
+  if (!domain || !/^[0-9a-f]{32}$/.test(hex)) return null;
+  return `r-${hex}${replyMac(hex)}@${domain}`;
+}
+// local part in, message uuid out (or null when the shape or the mac is wrong)
+export function verifyReplyLocal(local) {
+  const m = /^r-([0-9a-f]{32})([0-9a-f]{12})$/.exec(String(local || '').toLowerCase());
+  if (!m || !same(replyMac(m[1]), m[2])) return null;
+  const h = m[1];
+  return [h.slice(0, 8), h.slice(8, 12), h.slice(12, 16), h.slice(16, 20), h.slice(20)].join('-');
+}

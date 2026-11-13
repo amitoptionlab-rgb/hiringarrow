@@ -24,6 +24,8 @@ export const config = {
   blockFreeEmail: e.BLOCK_FREE_EMAIL !== 'false',   // signups need a company email; set BLOCK_FREE_EMAIL=false to allow free emails
   requireEmailVerify: e.REQUIRE_EMAIL_VERIFY === 'true',   // new signups must confirm their email before the first login
   brevo: { webhookSecret: e.BREVO_WEBHOOK_SECRET || '' },       // protects POST /webhooks/brevo
+  replyDomain: (e.REPLY_DOMAIN || '').trim().toLowerCase(),        // e.g. reply.hiringarrow.in. Empty = inbound replies OFF and Reply-To is left as it is
+  inboundSecret: e.INBOUND_WEBHOOK_SECRET || e.BREVO_WEBHOOK_SECRET || '',   // protects POST /webhooks/inbound
   snsVerify: e.SNS_VERIFY !== 'false',
   razorpay: {
     keyId: e.RAZORPAY_KEY_ID || '',
