@@ -21,6 +21,7 @@ import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
 import { allowance } from './lib/limits.js';
 import { sendVerifyMail } from './lib/verify-mail.js';
+import { isFreeEmail } from './lib/email-policy.js';
 
 export const api = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -39,6 +40,7 @@ api.post('/auth/signup', authLimiter, async (req, res) => {
   if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
   const chk = await checkEmail(email, { mx: config.verifyMx });
   if (!chk.ok) throw new HttpError(400, `That email can't be used: ${chk.reason}.`);
+  if (config.blockFreeEmail && isFreeEmail(email)) throw new HttpError(400, 'Please use your company email. Gmail, Yahoo and other free email addresses are not allowed.');
   const hash = await bcrypt.hash(password, 11);
   const user = await tx(async (c) => {
     const { rows: [dup] } = await c.query('SELECT 1 FROM users WHERE email = $1', [email]);
