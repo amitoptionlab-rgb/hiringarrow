@@ -13,6 +13,15 @@ import { mcp } from './mcp.js';
 
 const app = express();
 app.set('trust proxy', 1);
+// TEMP: remove after IP debugging
+app.get('/__ip', (req, res) => res.json({
+  ip: req.ip, ips: req.ips,
+  xff: req.headers['x-forwarded-for'],
+  xreal: req.headers['x-real-ip'],
+  cf: req.headers['cf-connecting-ip'],
+  via: req.headers['via'],
+  proto: req.headers['x-forwarded-proto']
+}));
 app.disable('x-powered-by');
 app.use(helmet({
   contentSecurityPolicy: {
