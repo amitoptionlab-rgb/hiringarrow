@@ -12,16 +12,8 @@ import { v1 } from './v1.js';
 import { mcp } from './mcp.js';
 
 const app = express();
-app.set('trust proxy', 1);
-// TEMP: remove after IP debugging
-app.get('/__ip', (req, res) => res.json({
-  ip: req.ip, ips: req.ips,
-  xff: req.headers['x-forwarded-for'],
-  xreal: req.headers['x-real-ip'],
-  cf: req.headers['cf-connecting-ip'],
-  via: req.headers['via'],
-  proto: req.headers['x-forwarded-proto']
-}));
+// Railway edge adds 2 proxy hops before the app (client IP is 2nd from right in XFF).
+app.set('trust proxy', 2);
 app.disable('x-powered-by');
 app.use(helmet({
   contentSecurityPolicy: {
