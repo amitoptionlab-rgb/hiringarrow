@@ -22,6 +22,7 @@ import { sendMail } from './lib/mailer.js';
 import { allowance } from './lib/limits.js';
 import { sendVerifyMail } from './lib/verify-mail.js';
 import { isFreeEmail } from './lib/email-policy.js';
+import { audit, auditMutations } from './lib/audit.js';
 
 export const api = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -58,9 +59,11 @@ api.post('/auth/signup', authLimiter, async (req, res) => {
     return u;
   });
   if (config.requireEmailVerify) {
+    await audit(req, 'auth.signup', { tenantId: user.tenant_id, userId: user.id, details: { email, verify_pending: true }, issueDevice: true });
     await sendVerifyMail({ id: user.id, email });
     return res.status(201).json({ verify: true, email });
   }
+  await audit(req, 'auth.signup', { tenantId: user.tenant_id, userId: user.id, details: { email }, issueDevice: true });
   res.status(201).json({ token: sign(user) });
 });
 
@@ -68,11 +71,16 @@ api.post('/auth/login', authLimiter, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const { rows: [u] } = await q('SELECT id, tenant_id, role, password_hash, email_verified_at FROM users WHERE email = $1', [email]);
   const ok = u ? await bcrypt.compare(String(req.body.password || ''), u.password_hash) : await bcrypt.compare('x', '$2a$11$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin');
-  if (!u || !ok) throw new HttpError(401, 'Email or password is wrong.');
+  if (!u || !ok) {
+    await audit(req, 'auth.login', { tenantId: u?.tenant_id, userId: u?.id, success: false, details: { email, reason: u ? 'bad_password' : 'unknown_email' }, issueDevice: true });
+    throw new HttpError(401, 'Email or password is wrong.');
+  }
   if (config.requireEmailVerify && !u.email_verified_at) {
     await sendVerifyMail({ id: u.id, email });
+    await audit(req, 'auth.login', { tenantId: u.tenant_id, userId: u.id, success: false, details: { email, reason: 'unverified' }, issueDevice: true });
     return res.status(403).json({ error: 'Please confirm your email first. We just sent you a new link.' });
   }
+  await audit(req, 'auth.login', { tenantId: u.tenant_id, userId: u.id, details: { email }, issueDevice: true });
   res.json({ token: sign(u) });
 });
 
@@ -82,6 +90,7 @@ api.use((req, res, next) => {
   catch { res.status(401).json({ error: 'Please log in again.' }); }
 });
 
+api.use(auditMutations());
 const tid = (req) => req.user.tid;
 const testLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user.tid, message: { error: 'Too many test emails. Try again in an hour.' } });
 api.use('/automations', automations);

@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'node:crypto';
 import { config } from './config.js';
 import { q } from './db.js';
+import { auditAdmin } from './lib/audit.js';
 
 // Operator-only endpoints. Send header: x-admin-key: <ADMIN_KEY>
 export const admin = express.Router();
@@ -10,6 +11,8 @@ admin.use((req, res, next) => {
   const ok = config.adminKey && k.length === config.adminKey.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(config.adminKey));
   return ok ? next() : res.status(401).json({ error: 'Not allowed.' });
 });
+
+admin.use(auditAdmin());
 
 admin.get('/tenants', async (req, res) => {
   const { rows } = await q(
