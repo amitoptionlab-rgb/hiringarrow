@@ -4,6 +4,7 @@ import { isIP } from 'node:net';
 import { config } from './config.js';
 import { q } from './db.js';
 import { auditAdmin } from './lib/audit.js';
+import { insights } from './admin-insights.js';
 
 // Operator-only endpoints. Send header: x-admin-key: <ADMIN_KEY>
 export const admin = express.Router();
@@ -14,6 +15,7 @@ admin.use((req, res, next) => {
 });
 
 admin.use(auditAdmin());
+admin.use(insights);
 
 admin.get('/tenants', async (req, res) => {
   const { rows } = await q(
@@ -65,7 +67,7 @@ admin.get('/ips/shared', async (req, res) => {
   const days = Math.min(Math.max(+req.query.days || 30, 1), 365);
   const { rows } = await q(
     'SELECT host(ip) AS ip, count(DISTINCT tenant_id)::int AS tenants, count(*)::int AS events, max(at) AS last_seen ' +
-    'FROM audit_log WHERE ip IS NOT NULL AND tenant_id IS NOT NULL AND at > now() - make_interval(days => $1) ' +
+    'FROM audit_log WHERE ip IS NOT NULL AND tenant_id IS NOT NULL AND actor_type <> \'admin\' AND at > now() - make_interval(days => $1) ' +
     'GROUP BY ip HAVING count(DISTINCT tenant_id) >= 2 ORDER BY tenants DESC, events DESC LIMIT 100', [days]);
   res.json(rows);
 });
@@ -77,7 +79,7 @@ admin.get('/ips/:ip/accounts', async (req, res) => {
     'SELECT a.tenant_id, t.name, t.status, count(*)::int AS events, count(DISTINCT a.user_id)::int AS users, ' +
     'min(a.at) AS first_seen, max(a.at) AS last_seen ' +
     'FROM audit_log a LEFT JOIN tenants t ON t.id = a.tenant_id ' +
-    'WHERE a.ip = $1::inet AND a.tenant_id IS NOT NULL ' +
+    'WHERE a.ip = $1::inet AND a.tenant_id IS NOT NULL AND a.actor_type <> \'admin\' ' +
     'GROUP BY a.tenant_id, t.name, t.status ORDER BY last_seen DESC LIMIT 200', [req.params.ip]);
   res.json(rows);
 });
@@ -146,7 +148,7 @@ admin.get('/accounts/:id', async (req, res) => {
     'SELECT id, name, status, created_at FROM campaigns WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 10', [id]);
   const { rows: ips } = await q(
     'SELECT host(a.ip) AS ip, count(*)::int AS events, max(a.at) AS last_seen, ' +
-    '(SELECT count(DISTINCT b.tenant_id)::int FROM audit_log b WHERE b.ip = a.ip AND b.tenant_id IS NOT NULL) AS tenants ' +
+    '(SELECT count(DISTINCT b.tenant_id)::int FROM audit_log b WHERE b.ip = a.ip AND b.tenant_id IS NOT NULL AND b.actor_type <> \'admin\') AS tenants ' +
     'FROM audit_log a WHERE a.tenant_id = $1 AND a.ip IS NOT NULL GROUP BY a.ip ORDER BY max(a.at) DESC LIMIT 15', [id]);
   const { rows: activity } = await q(
     'SELECT id, at, action, success, host(ip) AS ip, device_id, user_agent FROM audit_log WHERE tenant_id = $1 ORDER BY id DESC LIMIT 25', [id]);
