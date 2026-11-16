@@ -1,9 +1,10 @@
 import { q } from '../db.js';
 import { checkEmail, mapLimit } from './validate.js';
+import { mailboxCheck, mailboxEnabled } from './mailbox-check.js';
 
 // Contacts ko verify karke contacts.verification me likhta hai.
 // bounced/complained contacts ko chhoona nahi (webhook unka status sambhalta hai).
-export async function verifyContacts({ tenantId = null, limit = 5000, staleDays = 90, concurrency = 20 } = {}) {
+export async function verifyContacts({ tenantId = null, limit = 5000, staleDays = 90, concurrency = mailboxEnabled ? 5 : 20 } = {}) {
   const params = [staleDays];
   let where = `status NOT IN ('bounced','complained')
                AND (verification = 'unknown' OR verification_checked_at IS NULL
@@ -14,6 +15,10 @@ export async function verifyContacts({ tenantId = null, limit = 5000, staleDays 
 
   const results = await mapLimit(rows, concurrency, async (r) => {
     const c = await checkEmail(r.email, { mx: true });
+    if (mailboxEnabled && c.ok && c.verification === 'valid' && !c.tempfail) {
+      try { const m = await mailboxCheck(r.email); return { id: String(r.id), verification: m.verification, reason: m.reason, suggestion: null }; }
+      catch { return { id: String(r.id), verification: 'unknown', reason: 'mailbox check failed', suggestion: null }; }
+    }
     return {
       id: String(r.id),
       verification: c.tempfail ? 'unknown' : (c.verification || (c.ok ? 'valid' : 'invalid')),
