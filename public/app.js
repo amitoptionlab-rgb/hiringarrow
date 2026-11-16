@@ -112,8 +112,29 @@ function checklist(c) {
   return `<div class="panel"><h2>Get ready to send <span class="muted" style="font-weight:400">· ${done} of ${steps.length} done</span></h2><div class="progress"><i style="width:${100 * done / steps.length}%"></i></div>
   <ul class="todo">${steps.map(([ok, t, href, d]) => `<li class="${ok ? 'done' : ''}"><span class="tick" aria-hidden="true">${ok ? '✓' : ''}</span><span class="t">${ok ? esc(t) : `<a href="${href}">${esc(t)}</a>`}</span>${ok ? '' : `<span class="muted small">${esc(d)}</span>`}</li>`).join('')}</ul></div>`;
 }
-async function overview() {
-  const [s, camps] = await Promise.all([api('/stats'), api('/campaigns')]);
+function dashPanels(d) {
+  const bv = d.contacts.by_verification || {}, st = d.contacts.by_status || {};
+  const vTotal = Object.values(bv).reduce((a, n) => a + n, 0);
+  const order = ['valid', 'unknown', 'risky', 'disposable', 'invalid'];
+  const keys = [...order.filter((k) => k in bv), ...Object.keys(bv).filter((k) => !order.includes(k))];
+  const stat = (l, v) => `<div class="meter"><div><b>${esc(l)}</b></div><div style="font-size:26px;font-weight:700">${num(v || 0)}</div></div>`;
+  const tick = (ok) => ok ? '<span style="color:#1a8f4c">✓</span>' : '<span style="color:#c0392b">✗</span>';
+  const ver = vTotal ? `<div class="funnel">${keys.map((k) => `<div class="fr"><span>${esc(k)}</span><div class="bar"><i style="width:${Math.max(pct(bv[k], vTotal), bv[k] ? 1 : 0)}%"></i></div><span><b>${num(bv[k])}</b> <span class="muted">${pct(bv[k], vTotal).toFixed(1)}%</span></span></div>`).join('')}</div>`
+    : '<p class="muted">No subscribed contacts yet.</p>';
+  const unknown = bv.unknown || 0;
+  return `<div class="panel"><h2>Contacts</h2>
+    <div class="meters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">${stat('Total', d.contacts.total)}${stat('Subscribed', st.subscribed)}${stat('Unsubscribed', st.unsubscribed)}${stat('Bounced', st.bounced)}${stat('Complained', st.complained)}</div>
+    <h3 style="margin-top:18px">Email verification</h3>${ver}
+    ${unknown ? `<p class="muted">${num(unknown)} contacts are not verified yet. <a href="#/contacts">Verify contacts</a></p>` : ''}</div>
+  <div class="panel"><h2>Your plan <span class="muted" style="font-weight:400">· ${esc(d.plan.name)}</span></h2>
+    <div class="meters">${meter('Contacts', d.contacts.total, d.plan.max_contacts, num, '')}${meter('Sending domains', d.domains.length, d.plan.max_domains, num, '')}${meter('Monthly emails', d.usage.month.used, d.usage.month.limit || d.plan.monthly_emails, num, '')}</div>
+    <p class="muted">API keys: <b>${num(d.api_keys)}</b> · <a href="#/plan">Change plan</a></p></div>
+  <div class="panel"><h2>Sending domains</h2>${d.domains.length ? `<div class="tablewrap"><table><thead><tr><th>Domain</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>Status</th></tr></thead><tbody>
+    ${d.domains.map((x) => `<tr><td>${esc(x.domain)}</td><td>${tick(x.spf)}</td><td>${tick(x.dkim)}</td><td>${tick(x.dmarc)}</td><td>${x.verified ? 'Verified' : '<a href="#/domains">Finish setup</a>'}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted">No domain yet. <a href="#/domains">Add your sending domain</a></p>'}</div>
+  ${d.lists.length ? `<div class="panel"><h2>Lists</h2><div class="tablewrap"><table><thead><tr><th>List</th><th class="n">Subscribers</th></tr></thead><tbody>${d.lists.map((x) => `<tr><td>${esc(x.name)}</td><td class="n">${num(x.subscribers)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
+}async function overview() {
+  const [s, camps, dash] = await Promise.all([api('/stats'), api('/campaigns'), api('/dashboard')]);
   const rows = [['Sent', s.sent, 100], ['Delivered', s.delivered, pct(s.delivered, s.sent)], ['Opened', s.opens, pct(s.opens, s.sent)], ['Clicked', s.clicks, pct(s.clicks, s.sent)]];
   const cr = pct(s.complained, s.sent) / 100, br = pct(s.bounced, s.sent) / 100;
   const banner = me.status === 'review' ? `<div class="banner"><b>Your account is under review.</b> You can build campaigns and send test emails to yourself. Sending to contacts unlocks once we approve your account.</div>`
@@ -127,7 +148,7 @@ async function overview() {
   <div class="panel"><h2>Sender health</h2><p class="muted">Gmail and Yahoo start filtering you to spam when complaints pass 0.3%. We pause a campaign at 0.1%.</p>
     <div class="meters">${meter('Spam complaints', cr, s.circuit.complaintRate, pctFmt, 'of sent')}${meter('Bounces', br, s.circuit.bounceRate, pctFmt, 'of sent')}
     ${meter('Sent today', s.day.used, s.day.limit || s.day.used || 1, num, s.day.limit ? '' : '(no daily cap)')}${meter('Sent this month', s.month.used, s.month.limit, num, '')}</div></div>
-  <div class="panel"><h2>Recent campaigns</h2>${camps.length ? campaignTable(camps.slice(0, 5)) : '<p class="muted">No campaigns yet.</p>'}</div>`);
+  ${dashPanels(dash)}<div class="panel"><h2>Recent campaigns</h2>${camps.length ? campaignTable(camps.slice(0, 5)) : '<p class="muted">No campaigns yet.</p>'}</div>`);
 }
 const statusLabel = (c) => c.status === 'scheduled' ? `scheduled · ${whenTime(c.scheduled_at)}` : c.status.replace('_', ' ');
 function campaignTable(camps) {

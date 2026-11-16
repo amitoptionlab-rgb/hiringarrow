@@ -564,6 +564,41 @@ api.get('/stats', async (req, res) => {
     month: al.month, day: al.day, tenant_status, circuit: config.circuit, series, checklist });
 });
 
+// ---------- dashboard (everything in one call) ----------
+api.get('/dashboard', async (req, res) => {
+  const T = tid(req);
+  const [c, v, l, d, k, camp, plan, st] = await Promise.all([
+    q(`SELECT status, count(*)::int AS n FROM contacts WHERE tenant_id = $1 GROUP BY status`, [T]),
+    q(`SELECT COALESCE(verification, 'unknown') AS v, count(*)::int AS n FROM contacts WHERE tenant_id = $1 AND status = 'subscribed' GROUP BY 1`, [T]),
+    q(`SELECT l.id, l.name, count(c.id) FILTER (WHERE c.status = 'subscribed')::int AS subscribers
+         FROM lists l LEFT JOIN list_members lm ON lm.list_id = l.id LEFT JOIN contacts c ON c.id = lm.contact_id
+         WHERE l.tenant_id = $1 GROUP BY l.id ORDER BY subscribers DESC LIMIT 6`, [T]),
+    q(`SELECT domain, spf_ok, dkim_ok, dmarc_ok, verified_at FROM sending_domains WHERE tenant_id = $1 ORDER BY domain`, [T]),
+    q(`SELECT count(*)::int AS n FROM api_keys WHERE tenant_id = $1`, [T]),
+    q(`SELECT ca.id, ca.name, ca.status, ca.created_at,
+              count(m.id) FILTER (WHERE m.status IN ('sent','delivered','bounced','complained'))::int AS sent,
+              count(m.id) FILTER (WHERE m.status = 'bounced')::int AS bounced,
+              (SELECT count(DISTINCT e.message_id) FROM events e JOIN messages mm ON mm.id = e.message_id WHERE mm.campaign_id = ca.id AND e.type = 'open')::int AS opens,
+              (SELECT count(DISTINCT e.message_id) FROM events e JOIN messages mm ON mm.id = e.message_id WHERE mm.campaign_id = ca.id AND e.type = 'click')::int AS clicks
+         FROM campaigns ca LEFT JOIN messages m ON m.campaign_id = ca.id
+         WHERE ca.tenant_id = $1 AND ca.kind = 'broadcast' GROUP BY ca.id ORDER BY ca.created_at DESC LIMIT 5`, [T]),
+    q(`SELECT p.name, p.code, p.max_contacts, p.monthly_emails, p.max_domains FROM tenants t JOIN plans p ON p.id = t.plan_id WHERE t.id = $1`, [T]),
+    q(`SELECT status, daily_send_cap FROM tenants WHERE id = $1`, [T]),
+  ]);
+  const al = await allowance(T, null);
+  const byStatus = Object.fromEntries(c.rows.map((r) => [r.status, r.n]));
+  const total = c.rows.reduce((a, r) => a + r.n, 0);
+  res.json({
+    tenant: { status: st.rows[0].status, daily_send_cap: st.rows[0].daily_send_cap },
+    plan: plan.rows[0],
+    contacts: { total, by_status: byStatus, by_verification: Object.fromEntries(v.rows.map((r) => [r.v, r.n])) },
+    lists: l.rows,
+    domains: d.rows.map((r) => ({ domain: r.domain, spf: r.spf_ok, dkim: r.dkim_ok, dmarc: r.dmarc_ok, verified: !!r.verified_at })),
+    api_keys: k.rows[0].n,
+    campaigns: camp.rows,
+    usage: { month: al.month, day: al.day },
+  });
+});
 // ---------- billing ----------
 api.get('/plans', async (req, res) => {
   const { rows } = await q('SELECT code, name, price_inr, monthly_emails, max_contacts, max_domains, features FROM plans ORDER BY price_inr');
