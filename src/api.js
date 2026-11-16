@@ -17,6 +17,7 @@ import { automations } from './automations.js';
 import { aiRouter } from './ai.js';
 import { consultants } from './consultants.js';
 import crypto from 'node:crypto';
+import { parseContactsFile, ImportError } from './lib/import-parse.js';
 import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
 import { allowance } from './lib/limits.js';
@@ -162,14 +163,13 @@ api.post('/contacts/verify', async (req, res) => {
 });
 
 api.post('/contacts/import', upload.single('file'), async (req, res) => {
-  if (!req.file) throw new HttpError(400, 'Attach a CSV file with an "email" column.');
+  if (!req.file) throw new HttpError(400, 'Attach a file (CSV, Excel, TXT, JSON or VCF) with email addresses.');
   if (req.body.consent !== 'true') throw new HttpError(400, 'Confirm that these people gave you permission to email them.');
   let records;
-  try {
-    records = parse(req.file.buffer, { columns: (h) => h.map((x) => x.trim().toLowerCase()), skip_empty_lines: true, relax_column_count: true, bom: true, trim: true });
-  } catch { throw new HttpError(400, 'Could not read that CSV. Check the format.'); }
+  try { records = await parseContactsFile(req.file); }
+  catch (e) { throw new HttpError(400, e instanceof ImportError ? e.message : 'Could not read that file. Check the format.'); }
+  if (!records.length) throw new HttpError(400, 'No email addresses found in that file.');
   if (records.length > 50000) throw new HttpError(400, 'Import up to 50,000 rows at a time.');
-  if (records.length && !('email' in records[0])) throw new HttpError(400, 'The CSV needs a column named "email".');
   let listId = null;
   if (req.body.list_id) {
     listId = uuid(req.body.list_id);

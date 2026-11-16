@@ -103,7 +103,7 @@ function checklist(c) {
     [c.has_address, 'Add your business postal address', '#/settings', 'Required in every email footer by anti-spam laws.'],
     [c.has_domain, 'Add your sending domain', '#/domains', 'Use a subdomain such as mail.yourbrand.com.'],
     [c.domain_verified, 'Verify SPF and DKIM', '#/domains', 'Without these, Gmail and Outlook send you to spam.'],
-    [c.has_contacts, 'Import people who agreed to hear from you', '#/contacts', 'Upload a CSV with an email column.'],
+    [c.has_contacts, 'Import people who agreed to hear from you', '#/contacts', 'Upload a file with email addresses.'],
     [c.has_campaign, 'Create your first campaign', '#/campaigns/new', 'Pick a template and edit it.'],
     [c.has_sent, 'Send it', '#/campaigns', 'Send a test to yourself first.'],
   ];
@@ -335,8 +335,8 @@ async function contacts() {
   const qs = new URLSearchParams({ page: cstate.page, status: cstate.status, q: cstate.q, verification: cstate.verification });
   const [data, lists] = await Promise.all([api('/contacts?' + qs), api('/lists')]);
   await shell('contacts', `<div class="head"><div><h1>Contacts</h1><p class="muted">${num(data.total)} ${cstate.status || 'total'}</p></div><div class="actions"><span class="muted small" id="vstatus"></span><button type="button" class="ghost" data-act="verify-contacts">Verify contacts</button></div></div>
-  <div class="panel"><h2>Import from CSV</h2><p class="muted">Your file needs an <code>email</code> column. <code>first_name</code>, <code>last_name</code>, <code>tags</code> (comma separated) and any other columns are kept for personalisation and filtering. Invalid, disposable and previously unsubscribed addresses are skipped.</p>
-  <form data-form="import"><div class="row"><label>CSV file<input type="file" name="file" accept=".csv,text/csv" required></label>
+  <div class="panel"><h2>Import contacts</h2><p class="muted">Accepts CSV, Excel (.xlsx), TXT, JSON or VCF. Spreadsheets and CSV files should have an <code>email</code> column; plain text files can just list addresses. <code>first_name</code>, <code>last_name</code>, <code>tags</code> (comma separated) and any other columns are kept for personalisation and filtering. Invalid, disposable and previously unsubscribed addresses are skipped.</p>
+  <form data-form="import"><div class="row"><label>Contacts file<input type="file" name="file" accept=".csv,.tsv,.txt,.xlsx,.xlsm,.json,.vcf,text/csv,text/plain" required></label>
   <label>Add to list<select name="list_id"><option value="">No list</option>${lists.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label></div>
   <label style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" name="consent" value="true" style="width:auto;margin-top:5px" required><span>These people agreed to receive email from me. I can show when and how they agreed.</span></label>
   <button>Import contacts</button><div id="imp" style="margin-top:12px"></div></form></div>
@@ -346,7 +346,7 @@ async function contacts() {
   <div class="panel"><form data-form="cfilter" class="actions" style="margin-bottom:12px"><input name="q" value="${esc(cstate.q)}" placeholder="Search email or name" style="max-width:260px;margin:0">
   <select name="status" style="max-width:180px;margin:0"><option value="">Any status</option>${['subscribed', 'pending', 'unsubscribed', 'bounced', 'complained'].map((s) => `<option ${cstate.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select><select name="verification" style="max-width:180px;margin:0"><option value="">Any verification</option>${['valid', 'risky', 'invalid', 'disposable', 'unknown'].map((s) => `<option ${cstate.verification === s ? 'selected' : ''}>${s}</option>`).join('')}</select><button class="ghost">Filter</button></form>
   ${data.rows.length ? `<div class="tablewrap"><table><thead><tr><th>Email</th><th>Verification</th><th>Name</th><th>Tags</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody>${data.rows.map((r) => `<tr><td>${esc(r.email)}${vNote(r)}</td><td>${vBadge(r)}</td><td>${esc([r.first_name, r.last_name].filter(Boolean).join(' '))}</td><td>${(r.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ')}</td><td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td>${when(r.created_at)}</td><td class="n"><button class="small danger" data-act="delcontact" data-id="${r.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>
-  <div class="actions" style="margin-top:12px"><button class="ghost small" data-act="cpage" data-p="${cstate.page - 1}" ${cstate.page < 2 ? 'disabled' : ''}>Previous</button><span class="muted">Page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.size))}</span><button class="ghost small" data-act="cpage" data-p="${cstate.page + 1}" ${data.page * data.size >= data.total ? 'disabled' : ''}>Next</button></div>` : '<p class="muted">No contacts match. Import a CSV above.</p>'}</div>`);
+  <div class="actions" style="margin-top:12px"><button class="ghost small" data-act="cpage" data-p="${cstate.page - 1}" ${cstate.page < 2 ? 'disabled' : ''}>Previous</button><span class="muted">Page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.size))}</span><button class="ghost small" data-act="cpage" data-p="${cstate.page + 1}" ${data.page * data.size >= data.total ? 'disabled' : ''}>Next</button></div>` : '<p class="muted">No contacts match. Import a file above.</p>'}</div>`);
 }
 
 // ---------- domains ----------
