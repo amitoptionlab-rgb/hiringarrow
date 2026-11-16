@@ -69,7 +69,7 @@ async function recordSent(m, { providerMsgId, via }) {
 async function handleJob(job) {
   const { rows: [m] } = await q(
     `SELECT m.id, m.tenant_id, m.campaign_id, m.contact_id, m.status, m.variant,
-            c.email, c.first_name, c.last_name, c.custom_fields, c.status AS contact_status,
+            c.email, c.first_name, c.last_name, c.custom_fields, c.status AS contact_status, c.verification,
             ca.subject, ca.subject_b, ca.preheader, ca.html, ca.from_name, ca.from_email, ca.reply_to, ca.status AS campaign_status, ca.kind,
             t.postal_address, t.status AS tenant_status
      FROM messages m
@@ -92,6 +92,10 @@ async function handleJob(job) {
     return finishIfDone(m.campaign_id);
   }
 
+  if (['invalid', 'disposable'].includes(m.verification)) {
+    await q(`UPDATE messages SET status = 'failed', last_error = $2 WHERE id = $1 AND status = 'queued'`, [m.id, 'unverified: ' + m.verification]);
+    return finishIfDone(m.campaign_id);
+  }
   const unsubUrl = `${config.baseUrl}/u/${signId('u', m.contact_id)}`;
   const { html, text } = renderMessage({
     html: m.html, preheader: m.preheader, contact: m, messageId: m.id, unsubUrl, address: m.postal_address || '',

@@ -3,7 +3,7 @@ import { segmentSql } from './segment.js';
 
 // Who can receive a campaign: subscribed, deliverable, not suppressed, in the list/segment,
 // and (when campaignId is given) not already sent this campaign. Engaged contacts come first.
-export async function audience({ tenantId, listId = null, segment = null, campaignId = null, limit = null, sample = 0, countOnly = false, run = defaultQ }) {
+export async function audience({ tenantId, listId = null, segment = null, campaignId = null, limit = null, sample = 0, countOnly = false, onlyVerification = null, run = defaultQ }) {
   const q = run;
   const p = [tenantId];
   let where = `c.tenant_id = $1 AND c.status = 'subscribed' AND COALESCE(c.verification, 'valid') NOT IN ('invalid', 'disposable')
@@ -11,6 +11,7 @@ export async function audience({ tenantId, listId = null, segment = null, campai
     AND NOT EXISTS (SELECT 1 FROM global_suppressions g WHERE g.email = c.email)`;
   if (listId) { p.push(listId); where += ` AND EXISTS (SELECT 1 FROM list_members lm WHERE lm.list_id = $${p.length} AND lm.contact_id = c.id)`; }
   if (campaignId) { p.push(campaignId); where += ` AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.campaign_id = $${p.length} AND m.contact_id = c.id)`; }
+  if (onlyVerification) { p.push(onlyVerification); where += ` AND c.verification = $${p.length}`; }
   where += ` AND (${segmentSql(segment, p)})`;
   if (countOnly) {
     const { rows: [r] } = await q(`SELECT count(*)::int AS n FROM contacts c WHERE ${where}`, p);

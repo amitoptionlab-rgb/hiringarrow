@@ -9,6 +9,10 @@ export async function runPreflight(tenantId, c) {
   const { rows: [tenant] } = await q('SELECT postal_address FROM tenants WHERE id = $1', [tenantId]);
   const { rows: [domain] } = await q('SELECT * FROM sending_domains WHERE tenant_id = $1 AND domain = $2', [tenantId, c.from_email.split('@')[1] || '']);
   const r = preflight({ subject: c.subject, subjectB: c.subject_b, html: c.html, fromEmail: c.from_email, tenant, domain });
+  try {
+    const { count } = await audience({ tenantId, listId: c.list_id, segment: c.segment, campaignId: c.id, countOnly: true, onlyVerification: 'risky' });
+    if (count > 0) r.warnings.push(count + ' risky address' + (count === 1 ? '' : 'es') + ' in this audience (possible typos or role addresses like info@). They will still be sent to; check the Contacts page.');
+  } catch (e) { console.error('[preflight] risky count failed:', e.message); }
   await q('UPDATE campaigns SET spam_score = $2 WHERE id = $1', [c.id, r.score]);
   return { ...r, domain };
 }

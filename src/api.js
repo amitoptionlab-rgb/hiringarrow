@@ -134,7 +134,7 @@ api.get('/contacts', async (req, res) => {
   const params = [tid(req), status, search ? `%${search}%` : null];
   const where = `tenant_id = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR email ILIKE $3 OR first_name ILIKE $3)`;
   const { rows } = await q(
-    `SELECT id, email, first_name, last_name, tags, status, verification, last_engaged_at, created_at FROM contacts
+    `SELECT id, email, first_name, last_name, tags, status, verification, verification_reason, verification_suggestion, last_engaged_at, created_at FROM contacts
      WHERE ${where} ORDER BY created_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, params);
   const { rows: [{ total }] } = await q(`SELECT count(*)::int AS total FROM contacts WHERE ${where}`, params);
   res.json({ rows, total, page, size });
