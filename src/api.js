@@ -131,8 +131,8 @@ api.get('/contacts', async (req, res) => {
   const page = Math.max(1, +req.query.page || 1), size = 50;
   const status = ['pending', 'subscribed', 'unsubscribed', 'bounced', 'complained'].includes(req.query.status) ? req.query.status : null;
   const search = String(req.query.q || '').trim();
-  const params = [tid(req), status, search ? `%${search}%` : null];
-  const where = `tenant_id = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR email ILIKE $3 OR first_name ILIKE $3)`;
+  const params = [tid(req), status, search ? `%${search}%` : null, ['valid', 'risky', 'invalid', 'disposable', 'unknown'].includes(req.query.verification) ? req.query.verification : null];
+  const where = `tenant_id = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR email ILIKE $3 OR first_name ILIKE $3) AND ($4::text IS NULL OR ($4 = 'unknown' AND verification IS NULL) OR verification::text = $4)`;
   const { rows } = await q(
     `SELECT id, email, first_name, last_name, tags, status, verification, verification_reason, verification_suggestion, last_engaged_at, created_at FROM contacts
      WHERE ${where} ORDER BY created_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, params);
