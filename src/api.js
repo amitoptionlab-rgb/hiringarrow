@@ -21,6 +21,7 @@ import { renderMessage } from './lib/render.js';
 import { sendMail } from './lib/mailer.js';
 import { allowance } from './lib/limits.js';
 import { sendVerifyMail } from './lib/verify-mail.js';
+import { verifyContacts } from './lib/verify-contacts.js';
 import { isFreeEmail } from './lib/email-policy.js';
 import { audit, auditMutations } from './lib/audit.js';
 import { sesEnabled, ensureIdentity, deleteIdentity, dkimRecords } from './lib/ses.js';
@@ -131,8 +132,8 @@ api.get('/contacts', async (req, res) => {
   const page = Math.max(1, +req.query.page || 1), size = 50;
   const status = ['pending', 'subscribed', 'unsubscribed', 'bounced', 'complained'].includes(req.query.status) ? req.query.status : null;
   const search = String(req.query.q || '').trim();
-  const params = [tid(req), status, search ? `%${search}%` : null];
-  const where = `tenant_id = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR email ILIKE $3 OR first_name ILIKE $3)`;
+  const params = [tid(req), status, search ? `%${search}%` : null, ['valid', 'risky', 'invalid', 'disposable', 'unknown'].includes(req.query.verification) ? req.query.verification : null];
+  const where = `tenant_id = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR email ILIKE $3 OR first_name ILIKE $3) AND ($4::text IS NULL OR ($4 = 'unknown' AND verification IS NULL) OR verification::text = $4)`;
   const { rows } = await q(
     `SELECT id, email, first_name, last_name, tags, status, verification, verification_reason, verification_suggestion, last_engaged_at, created_at FROM contacts
      WHERE ${where} ORDER BY created_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, params);
@@ -142,6 +143,22 @@ api.get('/contacts', async (req, res) => {
 api.delete('/contacts/:id', async (req, res) => {
   await q('DELETE FROM contacts WHERE id = $1 AND tenant_id = $2', [uuid(req.params.id), tid(req)]);
   res.json({ ok: true });
+});
+
+// Verify this tenant's contacts in small batches. The UI calls this repeatedly until remaining = 0.
+const verifying = new Set();
+api.post('/contacts/verify', async (req, res) => {
+  const T = tid(req);
+  if (verifying.has(T)) throw new HttpError(409, 'Verification is already running. Wait for it to finish.');
+  verifying.add(T);
+  try {
+    const r = await verifyContacts({ tenantId: T, limit: 200, concurrency: 20 });
+    const { rows: [{ remaining }] } = await q(
+      `SELECT count(*)::int AS remaining FROM contacts
+        WHERE tenant_id = $1 AND status NOT IN ('bounced','complained')
+          AND (verification_checked_at IS NULL OR verification_checked_at < now() - interval '90 days')`, [T]);
+    res.json({ verified: r.checked, remaining, summary: r.summary });
+  } finally { verifying.delete(T); }
 });
 
 api.post('/contacts/import', upload.single('file'), async (req, res) => {

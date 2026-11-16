@@ -314,11 +314,27 @@ async function reviewAndSend(btn) {
 }
 
 // ---------- contacts ----------
-let cstate = { page: 1, status: '', q: '' };
+let cstate = { page: 1, status: '', q: '', verification: '' };
+const VCOL = { valid: '#1a7f37', risky: '#b7791f', invalid: '#c62828', disposable: '#c62828', unknown: '#6b7280' };
+const vBadge = (r) => { const v = r.verification || 'unknown'; const c = VCOL[v] || VCOL.unknown; return `<span class="badge" style="background:${c}1f;color:${c};border:1px solid ${c}55"${r.verification_reason ? ` title="${esc(r.verification_reason)}"` : ''}>${esc(v)}</span>`; };
+const vNote = (r) => (r.verification_suggestion ? ` <span class="muted small">(did you mean ${esc(r.verification_suggestion)}?)</span>` : '');
+async function verifyLoop(btn) {
+  btn.disabled = true; const st = $('#vstatus'); let total = 0;
+  try {
+    for (let i = 0; i < 200; i++) {
+      const r = await api('/contacts/verify', { method: 'POST' });
+      total += r.verified || 0;
+      if (st) st.textContent = `Verified ${num(total)}, ${num(r.remaining)} left...`;
+      if (!r.remaining || !r.verified) break;
+    }
+    toast(`Verified ${num(total)} contacts.`);
+  } catch (e) { if (!e.handled) toast(e.message, true); }
+  btn.disabled = false; render();
+}
 async function contacts() {
-  const qs = new URLSearchParams({ page: cstate.page, status: cstate.status, q: cstate.q });
+  const qs = new URLSearchParams({ page: cstate.page, status: cstate.status, q: cstate.q, verification: cstate.verification });
   const [data, lists] = await Promise.all([api('/contacts?' + qs), api('/lists')]);
-  await shell('contacts', `<div class="head"><div><h1>Contacts</h1><p class="muted">${num(data.total)} ${cstate.status || 'total'}</p></div></div>
+  await shell('contacts', `<div class="head"><div><h1>Contacts</h1><p class="muted">${num(data.total)} ${cstate.status || 'total'}</p></div><div class="actions"><span class="muted small" id="vstatus"></span><button type="button" class="ghost" data-act="verify-contacts">Verify contacts</button></div></div>
   <div class="panel"><h2>Import from CSV</h2><p class="muted">Your file needs an <code>email</code> column. <code>first_name</code>, <code>last_name</code>, <code>tags</code> (comma separated) and any other columns are kept for personalisation and filtering. Invalid, disposable and previously unsubscribed addresses are skipped.</p>
   <form data-form="import"><div class="row"><label>CSV file<input type="file" name="file" accept=".csv,text/csv" required></label>
   <label>Add to list<select name="list_id"><option value="">No list</option>${lists.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label></div>
@@ -328,8 +344,8 @@ async function contacts() {
   <div class="panel"><h2>Lists</h2>${lists.length ? `<div class="tablewrap"><table><thead><tr><th>List</th><th class="n">Subscribers</th><th>Public signup page (asks to confirm by email)</th></tr></thead><tbody>${lists.map((l) => `<tr><td>${esc(l.name)}</td><td class="n">${num(l.subscribers)}</td><td><code>${esc(l.subscribe_url)}</code></td></tr>`).join('')}</tbody></table></div>` : ''}
   <form data-form="list" class="actions" style="margin-top:12px"><input name="name" placeholder="New list name, e.g. Newsletter" required style="max-width:300px;margin:0"><button class="ghost">Create list</button></form></div>
   <div class="panel"><form data-form="cfilter" class="actions" style="margin-bottom:12px"><input name="q" value="${esc(cstate.q)}" placeholder="Search email or name" style="max-width:260px;margin:0">
-  <select name="status" style="max-width:180px;margin:0"><option value="">Any status</option>${['subscribed', 'pending', 'unsubscribed', 'bounced', 'complained'].map((s) => `<option ${cstate.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select><button class="ghost">Filter</button></form>
-  ${data.rows.length ? `<div class="tablewrap"><table><thead><tr><th>Email</th><th>Name</th><th>Tags</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody>${data.rows.map((r) => `<tr><td>${esc(r.email)}${r.verification === 'risky' ? ' <span class="muted">(' + esc(r.verification_reason || 'risky') + (r.verification_suggestion ? ' - did you mean ' + esc(r.verification_suggestion) + '?' : '') + ')</span>' : ''}</td><td>${esc([r.first_name, r.last_name].filter(Boolean).join(' '))}</td><td>${(r.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ')}</td><td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td>${when(r.created_at)}</td><td class="n"><button class="small danger" data-act="delcontact" data-id="${r.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>
+  <select name="status" style="max-width:180px;margin:0"><option value="">Any status</option>${['subscribed', 'pending', 'unsubscribed', 'bounced', 'complained'].map((s) => `<option ${cstate.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select><select name="verification" style="max-width:180px;margin:0"><option value="">Any verification</option>${['valid', 'risky', 'invalid', 'disposable', 'unknown'].map((s) => `<option ${cstate.verification === s ? 'selected' : ''}>${s}</option>`).join('')}</select><button class="ghost">Filter</button></form>
+  ${data.rows.length ? `<div class="tablewrap"><table><thead><tr><th>Email</th><th>Verification</th><th>Name</th><th>Tags</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody>${data.rows.map((r) => `<tr><td>${esc(r.email)}${vNote(r)}</td><td>${vBadge(r)}</td><td>${esc([r.first_name, r.last_name].filter(Boolean).join(' '))}</td><td>${(r.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(' ')}</td><td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td>${when(r.created_at)}</td><td class="n"><button class="small danger" data-act="delcontact" data-id="${r.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>
   <div class="actions" style="margin-top:12px"><button class="ghost small" data-act="cpage" data-p="${cstate.page - 1}" ${cstate.page < 2 ? 'disabled' : ''}>Previous</button><span class="muted">Page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.size))}</span><button class="ghost small" data-act="cpage" data-p="${cstate.page + 1}" ${data.page * data.size >= data.total ? 'disabled' : ''}>Next</button></div>` : '<p class="muted">No contacts match. Import a CSV above.</p>'}</div>`);
 }
 
@@ -977,6 +993,7 @@ document.addEventListener('click', (ev) => {
   if (act === 'dupe') return done(async () => { const r = await api(`/campaigns/${id}/duplicate`, { method: 'POST' }); toast('Copied. You are editing the new draft.'); location.hash = '#/campaigns/' + r.id; });
   if (act === 'send-new') return done(async () => { const r = await api(`/campaigns/${id}/send`, { method: 'POST' }); toast(`${num(r.queued)} more emails queued.`); render(); });
   if (act === 'delcontact') return done(async () => { await api('/contacts/' + id, { method: 'DELETE' }); render(); });
+  if (act === 'verify-contacts') return verifyLoop(t);
   if (act === 'cpage') { cstate.page = +t.dataset.p; return render(); }
   if (act === 'deldomain') return done(async () => { await api('/domains/' + id, { method: 'DELETE' }); render(); });
   if (act === 'dnscheck') return done(async () => {
@@ -1049,7 +1066,7 @@ document.addEventListener('submit', async (ev) => {
     } else if (kind === 'tagaud') { const r = await api('/audience/tag', { method: 'POST', body: { tag: val.tag, list_id: val.list_id || null } }); toast(`Tagged ${num(r.tagged)} people.`); }
     else if (kind === 'list') { await api('/lists', { method: 'POST', body: val }); render(); }
     else if (kind === 'domain') { await api('/domains', { method: 'POST', body: val }); render(); }
-    else if (kind === 'cfilter') { cstate = { page: 1, status: val.status, q: val.q }; render(); }
+    else if (kind === 'cfilter') { cstate = { page: 1, status: val.status, q: val.q, verification: val.verification }; render(); }
     else if (kind === 'import') {
       const r = await api('/contacts/import', { method: 'POST', form: new FormData(f) });
       $('#imp').innerHTML = `<p><b>${num(r.added)}</b> added, ${num(r.updated)} updated, ${num(r.duplicates)} duplicates, <b>${num(r.rejected)}</b> skipped.</p>${r.rejected_sample.length ? `<p class="muted">Skipped: ${r.rejected_sample.map((x) => esc(x.email) + ' (' + esc(x.reason) + ')').join(', ')}</p>` : ''}`;
