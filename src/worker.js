@@ -9,6 +9,7 @@ import { suppress } from './lib/suppress.js';
 import { startCampaign } from './lib/campaign-send.js';
 import { bulkHeaders } from './lib/headers.js';
 import { automationTick } from './lib/automation.js';
+import { startAutoPause } from './autoPause.js';
 
 const circuitCache = new Map(); // campaignId -> { at, tripped }
 
@@ -182,3 +183,4 @@ schedulerTick();
 // Journeys: move people along their steps.
 let ticking = false;
 setInterval(async () => { if (ticking) return; ticking = true; try { await automationTick(); } catch (e) { console.error('[journey]', e.message); } finally { ticking = false; } }, 5000);
+startAutoPause();
